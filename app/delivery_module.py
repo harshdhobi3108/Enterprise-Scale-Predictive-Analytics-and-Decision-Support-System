@@ -6,188 +6,69 @@ def run_delivery_dashboard():
     import plotly.graph_objects as go
     import plotly.express as px
     import shap
+    from datetime import datetime
 
     # ==========================================================
-    # ULTRA MODERN DARK THEME
-    # ==========================================================
-    st.markdown("""
-<style>
-
-/* ===== MAIN BACKGROUND ===== */
-.stApp {
-    background: radial-gradient(circle at top left, #0f172a, #050816 70%);
-}
-
-/* ===== SIDEBAR BASE ===== */
-section[data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #0b1220, #050816);
-    border-right: 1px solid rgba(0, 255, 255, 0.15);
-    box-shadow: 0 0 20px rgba(0, 255, 255, 0.05);
-    padding-top: 25px;
-}
-
-/* ===== SIDEBAR TITLE ===== */
-section[data-testid="stSidebar"] h1 {
-    font-size: 20px !important;
-    font-weight: 700 !important;
-    color: #00f0ff !important;
-    letter-spacing: 1px;
-}
-
-/* ===== SIDEBAR SECTION HEADERS ===== */
-section[data-testid="stSidebar"] h2,
-section[data-testid="stSidebar"] h3 {
-    font-size: 12px !important;
-    text-transform: uppercase;
-    letter-spacing: 1.5px;
-    color: #6ee7ff !important;
-    margin-top: 25px;
-}
-
-/* ===== SLIDER TRACK ===== */
-section[data-testid="stSidebar"] .stSlider > div > div {
-    color: #00f0ff;
-}
-
-/* ===== BUTTON STYLE ===== */
-.stButton > button {
-    background: linear-gradient(90deg, #00f0ff, #7c3aed);
-    color: black;
-    font-weight: 600;
-    border-radius: 12px;
-    border: none;
-    padding: 10px 20px;
-}
-
-.stButton > button:hover {
-    box-shadow: 0 0 15px #00f0ff;
-    transition: 0.3s;
-}
-
-/* ===== KPI CARDS ===== */
-div[data-testid="metric-container"] {
-    background: rgba(255,255,255,0.02);
-    border: 1px solid rgba(0,255,255,0.1);
-    padding: 28px;
-    border-radius: 18px;
-    backdrop-filter: blur(8px);
-}
-
-/* ===== BLOCK CONTAINER ===== */
-.block-container {
-    max-width: 1500px;
-}
-
-</style>
-""", unsafe_allow_html=True)
-
-    # ==========================================================
-    # LOAD MODEL
+    # MODEL LOADING (SAFE + CACHED)
     # ==========================================================
     @st.cache_resource
-    def load_model():
+    def load_assets():
         model = joblib.load("models/delivery_delay_model.pkl")
         explainer = shap.TreeExplainer(model)
         importance_df = pd.read_csv("models/feature_importance.csv")
         return model, explainer, importance_df
 
-    model, explainer, importance_df = load_model()
+    model, explainer, importance_df = load_assets()
     EXPECTED_FEATURES = list(model.feature_name_)
 
     # ==========================================================
     # HEADER
     # ==========================================================
-    st.markdown("""
-<style>
+    st.markdown("# Delivery Risk Intelligence")
+    st.caption("Operational Delay Risk Monitoring & Explainable AI")
+    st.markdown(f"Last Updated: {datetime.now().strftime('%d %B %Y, %H:%M')}")
+    st.markdown("---")
 
-/* ===== HERO TITLE GLOW ===== */
-.hero-title {
-    font-size: 46px;
-    font-weight: 800;
-    letter-spacing: 1px;
-    background: linear-gradient(90deg, #00f0ff, #7c3aed);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-}
-
-/* ===== SUBTITLE ===== */
-.hero-subtitle {
-    color: #94a3b8;
-    font-size: 16px;
-    margin-top: 8px;
-}
-
-/* ===== STATUS BADGE ===== */
-.status-badge {
-    display: inline-block;
-    padding: 6px 14px;
-    border-radius: 20px;
-    background: rgba(0,255,255,0.1);
-    border: 1px solid rgba(0,255,255,0.3);
-    font-size: 13px;
-    color: #00f0ff;
-    margin-top: 15px;
-}
-
-/* ===== GLOW LINE ===== */
-.glow-line {
-    height: 2px;
-    background: linear-gradient(90deg, #00f0ff, transparent);
-    margin-top: 20px;
-    margin-bottom: 25px;
-}
-
-</style>
-
-<div>
-    <div class="hero-title">Delivery Risk Command Center</div>
-    <div class="hero-subtitle">
-        Real-Time Operational Risk Monitoring • Predictive AI • Explainability Engine
-    </div>
-    <div class="status-badge">
-        ● System Operational
-    </div>
-    <div class="glow-line"></div>
-</div>
-""", unsafe_allow_html=True)
-
-    st.markdown("<hr style='border:1px solid #1f2937;'>", unsafe_allow_html=True)
-
-   # ==========================================================
-    # SIDEBAR INPUT PANEL
     # ==========================================================
-    st.sidebar.markdown("## ⚙ CONTROL PANEL")
-    st.sidebar.markdown("---")
+    # SIDEBAR CONTROLS
+    # ==========================================================
+    st.sidebar.markdown("## Risk Control Panel")
 
-    # Risk Threshold Controls
-    st.sidebar.markdown("### 🎯 Risk Thresholds")
     medium_threshold = st.sidebar.slider(
-        "Medium Risk Threshold (%)",
-        10, 60, 30, 5
+        "Medium Risk Threshold (%)", 10, 60, 30, 5
     )
 
     high_threshold = st.sidebar.slider(
-        "High Risk Threshold (%)",
-        40, 95, 60, 5
+        "High Risk Threshold (%)", 40, 95, 60, 5
     )
 
     st.sidebar.markdown("---")
 
-    st.sidebar.markdown("### ⏱ Time Parameters")
     purchase_hour = st.sidebar.slider("Purchase Hour", 0, 23, 12)
     purchase_dayofweek = st.sidebar.slider("Day of Week", 0, 6, 2)
     purchase_month = st.sidebar.slider("Purchase Month", 1, 12, 6)
 
-    st.sidebar.markdown("### 🚚 Logistics Parameters")
-    approval_delay_hours = st.sidebar.number_input("Approval Delay", 0.0, 200.0, 2.0)
-    carrier_delay_hours = st.sidebar.number_input("Carrier Delay", 0.0, 500.0, 12.0)
-    estimated_delivery_days = st.sidebar.number_input("Estimated Delivery Days", 1.0, 60.0, 7.0)
+    approval_delay_hours = st.sidebar.number_input(
+        "Approval Delay (Hours)", 0.0, 200.0, 2.0
+    )
 
-    st.sidebar.markdown("### 💳 Financial Parameters")
-    total_payment_value = st.sidebar.number_input("Payment Value", 0.0, 10000.0, 150.0)
+    carrier_delay_hours = st.sidebar.number_input(
+        "Carrier Delay (Hours)", 0.0, 500.0, 12.0
+    )
+
+    estimated_delivery_days = st.sidebar.number_input(
+        "Estimated Delivery Days", 1.0, 60.0, 7.0
+    )
+
+    total_payment_value = st.sidebar.number_input(
+        "Payment Value", 0.0, 10000.0, 150.0
+    )
+
     payment_installments = st.sidebar.slider("Installments", 1, 24, 1)
 
-
+    # ==========================================================
+    # INPUT DATA
+    # ==========================================================
     input_data = pd.DataFrame([{
         "purchase_hour": purchase_hour,
         "purchase_dayofweek": purchase_dayofweek,
@@ -200,28 +81,49 @@ div[data-testid="metric-container"] {
     }]).reindex(columns=EXPECTED_FEATURES)
 
     # ==========================================================
-    # PREDICTION BUTTON
+    # EXECUTIVE SNAPSHOT
     # ==========================================================
-    if st.button("🚀 Run Risk Analysis"):
+    st.markdown("## Executive Snapshot")
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    col1.metric("Orders Monitored", "1,250")
+    col2.metric("Average Risk Score", "42%")
+    col3.metric("High Risk Exposure", "28%")
+    col4.metric("On-Time Delivery Rate", "72%")
+
+    st.markdown("---")
+
+    # ==========================================================
+    # RUN PREDICTION
+    # ==========================================================
+    if st.button("Run Risk Assessment"):
 
         probability = float(model.predict_proba(input_data)[0][1])
         risk_score = probability * 100
 
-        # ======================================================
-        # RISK STATUS BANNER
-        # ======================================================
-        if risk_score >= 60:
-            banner_color = "#7f1d1d"
-            status = "HIGH RISK — Immediate Action Required"
-        elif risk_score >= 30:
-            banner_color = "#78350f"
-            status = "MODERATE RISK — Monitor Closely"
+        # Dynamic Classification
+        if risk_score >= high_threshold:
+            status = "High Risk — Immediate Operational Intervention Required"
+        elif risk_score >= medium_threshold:
+            status = "Moderate Risk — Enhanced Monitoring Recommended"
         else:
-            banner_color = "#064e3b"
-            status = "LOW RISK — Operations Stable"
+            status = "Low Risk — Operations Within Acceptable Range"
 
         st.markdown(
-            f"<div class='risk-banner' style='background:{banner_color};'>{status}</div>",
+            f"""
+            <div style='
+                padding:18px;
+                border-radius:10px;
+                background-color: rgba(255,255,255,0.03);
+                border: 1px solid rgba(255,255,255,0.08);
+                font-weight:600;
+                text-align:center;'>
+                {status}
+                <br>
+                Predicted Delay Probability: {risk_score:.2f}%
+            </div>
+            """,
             unsafe_allow_html=True
         )
 
@@ -233,31 +135,21 @@ div[data-testid="metric-container"] {
         gauge = go.Figure(go.Indicator(
             mode="gauge+number",
             value=risk_score,
-            title={'text': "Delay Probability (%)"},
+            title={'text': "Predicted Delay Probability (%)"},
             gauge={
                 'axis': {'range': [0, 100]},
                 'bar': {'color': "#3b82f6"},
-                'steps': [
-                    {'range': [0, 30], 'color': "#065f46"},
-                    {'range': [30, 60], 'color': "#78350f"},
-                    {'range': [60, 100], 'color': "#7f1d1d"}
-                ],
             }
         ))
 
-        gauge.update_layout(
-            paper_bgcolor="#0a0f1c",
-            font={'color': "white"}
-        )
+        st.plotly_chart(gauge, use_container_width=True)
 
-        st.plotly_chart(gauge, width="stretch")
-
-        st.markdown("<hr style='border:1px solid #1f2937;'>", unsafe_allow_html=True)
+        st.markdown("---")
 
         # ======================================================
-        # SHAP FEATURE IMPACT
+        # SHAP ANALYSIS
         # ======================================================
-        st.subheader("AI Feature Impact Analysis")
+        st.markdown("## Risk Driver Analysis")
 
         shap_values = explainer.shap_values(input_data)
         shap_array = shap_values[1][0] if isinstance(shap_values, list) else shap_values[0]
@@ -265,43 +157,59 @@ div[data-testid="metric-container"] {
         shap_df = pd.DataFrame({
             "Feature": EXPECTED_FEATURES,
             "Impact": shap_array
-        }).sort_values("Impact")
+        })
+
+        shap_df["abs_impact"] = shap_df["Impact"].abs()
+        shap_df = shap_df.sort_values("abs_impact", ascending=False)
+
+        # Business-friendly naming
+        feature_map = {
+            "approval_delay_hours": "Approval Processing Delay",
+            "carrier_delay_hours": "Carrier Delay",
+            "estimated_delivery_days": "Delivery Window Duration",
+            "total_payment_value": "Transaction Value",
+            "payment_installments": "Installment Count",
+            "purchase_hour": "Purchase Hour",
+            "purchase_month": "Purchase Month",
+            "purchase_dayofweek": "Day of Week"
+        }
+
+        shap_df["Feature"] = shap_df["Feature"].map(
+            lambda x: feature_map.get(x, x)
+        )
+
+        top3 = shap_df.head(3)
 
         fig = px.bar(
-            shap_df,
+            top3.sort_values("Impact"),
             x="Impact",
             y="Feature",
-            orientation="h",
-            template="plotly_dark"
+            orientation="h"
         )
 
-        fig.update_layout(
-            plot_bgcolor="#0a0f1c",
-            paper_bgcolor="#0a0f1c",
-            font=dict(color="white")
+        st.plotly_chart(fig, use_container_width=True)
+
+        # Executive Interpretation
+        st.markdown("### Executive Interpretation")
+
+        for _, row in top3.iterrows():
+            direction = "increasing" if row["Impact"] > 0 else "reducing"
+            st.write(
+                f"- {row['Feature']} is currently {direction} overall delay probability."
+            )
+
+    # ==========================================================
+    # GLOBAL MODEL INTELLIGENCE
+    # ==========================================================
+    st.markdown("---")
+
+    with st.expander("Strategic Model Influence Overview"):
+
+        fig_imp = px.bar(
+            importance_df.sort_values("importance"),
+            x="importance",
+            y="feature",
+            orientation="h"
         )
 
-        st.plotly_chart(fig, width="stretch")
-
-    st.markdown("<hr style='border:1px solid #1f2937;'>", unsafe_allow_html=True)
-
-    # ==========================================================
-    # GLOBAL MODEL INSIGHTS
-    # ==========================================================
-    st.subheader("Global Model Intelligence")
-
-    fig_imp = px.bar(
-        importance_df,
-        x="importance",
-        y="feature",
-        orientation="h",
-        template="plotly_dark"
-    )
-
-    fig_imp.update_layout(
-        plot_bgcolor="#0a0f1c",
-        paper_bgcolor="#0a0f1c",
-        font=dict(color="white")
-    )
-
-    st.plotly_chart(fig_imp, width="stretch")
+        st.plotly_chart(fig_imp, use_container_width=True)

@@ -12,22 +12,18 @@ def run_revenue_dashboard():
     # ==========================================================
     st.markdown("""
     <style>
-
     .stApp {
         background: linear-gradient(135deg, #0b1220, #111827);
     }
-
     h1 {
         font-size: 38px !important;
         font-weight: 700 !important;
         letter-spacing: 0.5px;
     }
-
     h2, h3 {
         color: #e2e8f0 !important;
         margin-top: 10px;
     }
-
     div[data-testid="metric-container"] {
         background: rgba(255,255,255,0.03);
         border: 1px solid rgba(255,255,255,0.08);
@@ -35,12 +31,10 @@ def run_revenue_dashboard():
         border-radius: 18px;
         backdrop-filter: blur(6px);
     }
-
     .block-container {
         max-width: 1500px;
         padding-top: 2rem;
     }
-
     </style>
     """, unsafe_allow_html=True)
 
@@ -92,12 +86,12 @@ def run_revenue_dashboard():
     k1.metric("Total Customers", f"{total_customers:,}")
     k2.metric("Total Revenue", f"${total_revenue:,.0f}")
     k3.metric("Avg Customer Value", f"${avg_value:,.2f}")
-    k4.metric("VIP Contribution", f"{vip_contribution:.2f}%")
+    k4.metric("VIP Revenue Contribution", f"{vip_contribution:.2f}%")
 
     st.markdown("<br>", unsafe_allow_html=True)
 
     # ==========================================================
-    # TABBED EXECUTIVE LAYOUT
+    # TABS
     # ==========================================================
     tab1, tab2, tab3 = st.tabs([
         "📊 Segmentation Overview",
@@ -123,13 +117,7 @@ def run_revenue_dashboard():
             template="plotly_dark"
         )
 
-        fig_dist.update_layout(
-            plot_bgcolor="#111827",
-            paper_bgcolor="#111827",
-            font=dict(color="#e2e8f0")
-        )
-
-        col1.plotly_chart(fig_dist, width="stretch")
+        col1.plotly_chart(fig_dist, use_container_width=True)
 
         revenue_df = segmenter.revenue_contribution(rfm)
 
@@ -140,16 +128,10 @@ def run_revenue_dashboard():
             template="plotly_dark"
         )
 
-        fig_rev.update_layout(
-            plot_bgcolor="#111827",
-            paper_bgcolor="#111827",
-            font=dict(color="#e2e8f0")
-        )
-
-        col2.plotly_chart(fig_rev, width="stretch")
+        col2.plotly_chart(fig_rev, use_container_width=True)
 
     # ==========================================================
-    # TAB 2 — 3D ANALYTICS
+    # TAB 2 — BEHAVIORAL ANALYTICS
     # ==========================================================
     with tab2:
 
@@ -164,54 +146,87 @@ def run_revenue_dashboard():
             template="plotly_dark"
         )
 
-        fig_3d.update_layout(
-            plot_bgcolor="#111827",
-            paper_bgcolor="#111827",
-            font=dict(color="#e2e8f0")
-        )
-
-        st.plotly_chart(fig_3d, width="stretch")
+        st.plotly_chart(fig_3d, use_container_width=True)
 
     # ==========================================================
-    # TAB 3 — CUSTOMER PROFILE PANEL
+    # TAB 3 — CUSTOMER INTELLIGENCE
     # ==========================================================
     with tab3:
 
         st.subheader("Customer Intelligence Profile")
 
-        selected_customer = st.selectbox(
+        rfm_sorted = rfm.sort_values("Monetary", ascending=False).reset_index(drop=True)
+
+        rfm_sorted["Customer_Code"] = [
+            f"CUST-{str(i+1).zfill(5)}" for i in range(len(rfm_sorted))
+        ]
+
+        rfm_sorted["Display_Label"] = (
+            rfm_sorted["Customer_Code"]
+            + " | "
+            + rfm_sorted["Customer_City"].str.title()
+            + " | "
+            + rfm_sorted["Customer_State"].str.upper()
+        )
+
+        selected_display = st.selectbox(
             "Select Customer",
-            rfm["customer_unique_id"].sample(300, random_state=42)
+            rfm_sorted["Display_Label"]
         )
 
-        customer_data = rfm[rfm["customer_unique_id"] == selected_customer].iloc[0]
+        customer_data = rfm_sorted[
+            rfm_sorted["Display_Label"] == selected_display
+        ].iloc[0]
 
-        total_revenue = rfm["Monetary"].sum()
+        total_revenue = rfm_sorted["Monetary"].sum()
 
-        revenue_percentile = (
-            (rfm["Monetary"] < customer_data["Monetary"]).mean() * 100
+        revenue_percentile = customer_data["Revenue_Percentile"]
+        contribution_pct = customer_data["Monetary"] / total_revenue * 100
+
+        segment_avg = (
+            rfm_sorted[rfm_sorted["Segment"] == customer_data["Segment"]]["Monetary"].mean()
         )
 
-        contribution_pct = (
-            customer_data["Monetary"] / total_revenue * 100
+        pct_vs_segment = (
+            (customer_data["Monetary"] - segment_avg) / segment_avg * 100
         )
 
+        # ===============================
+        # PRIMARY METRICS
+        # ===============================
         c1, c2, c3, c4 = st.columns(4, gap="large")
-        c1.metric("Segment", customer_data["Segment"])
-        c2.metric("Recency (Days)", int(customer_data["Recency"]))
-        c3.metric("Frequency", int(customer_data["Frequency"]))
-        c4.metric("Monetary Value", f"${customer_data['Monetary']:,.2f}")
+        c1.metric("Customer Segment", customer_data["Segment"])
+        c2.metric("Days Since Last Purchase", int(customer_data["Recency"]))
+        c3.metric("Total Orders", int(customer_data["Frequency"]))
+        c4.metric("Total Revenue Generated", f"${customer_data['Monetary']:,.2f}")
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        c5, c6 = st.columns(2, gap="large")
+        # ===============================
+        # INTELLIGENCE METRICS
+        # ===============================
+        c5, c6, c7, c8 = st.columns(4, gap="large")
         c5.metric("Revenue Percentile", f"{revenue_percentile:.1f}%")
         c6.metric("Revenue Contribution", f"{contribution_pct:.4f}%")
+        c7.metric("Segment Avg Revenue", f"${segment_avg:,.2f}")
+        c8.metric("Vs Segment Avg", f"{pct_vs_segment:.1f}%")
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        st.info(
-            f"This customer belongs to **{customer_data['Segment']}**. "
-            f"They rank in the top {100 - revenue_percentile:.1f}% of customers by revenue. "
-            f"Strategic engagement should align with their behavioral classification."
-        )
+        # ===============================
+        # STRATEGIC INSIGHT PANEL
+        # ===============================
+        st.markdown(f"""
+        <div style="padding:20px;border-radius:15px;
+                    background:rgba(59,130,246,0.08);
+                    border:1px solid rgba(59,130,246,0.3);">
+
+        <h4 style="margin:0;">Strategic Classification</h4>
+        <p style="margin:5px 0;">
+        <b>Customer Segment:</b> {customer_data['Segment']} <br>
+        <b>Strategic Tier:</b> {customer_data['Strategic_Tier']} <br>
+        <b>Recommended Action:</b> {segmenter.recommend_strategy(customer_data['Segment'])}
+        </p>
+
+        </div>
+        """, unsafe_allow_html=True)

@@ -14,7 +14,7 @@ class RFMSegmenter:
         self.customers = customers.copy()
 
     # =====================================================
-    # BUILD RFM TABLE
+    # BUILD ENTERPRISE RFM TABLE
     # =====================================================
     def build_rfm(self):
 
@@ -45,19 +45,45 @@ class RFMSegmenter:
                     lambda x: (reference_date - x.max()).days
                 ),
                 Frequency=("order_id", "nunique"),
-                Monetary=("payment_value", "sum")
+                Monetary=("payment_value", "sum"),
+                First_Purchase=("order_purchase_timestamp", "min"),
+                Last_Purchase=("order_purchase_timestamp", "max"),
+                Customer_City=("customer_city", "first"),
+                Customer_State=("customer_state", "first")
             )
             .reset_index()
         )
 
+        # =====================================================
+        # ENTERPRISE METRICS
+        # =====================================================
+
+        rfm["Customer_Tenure_Days"] = (
+            rfm["Last_Purchase"] - rfm["First_Purchase"]
+        ).dt.days
+
+        rfm["Avg_Order_Value"] = (
+            rfm["Monetary"] / rfm["Frequency"]
+        )
+
+        rfm["Revenue_Percentile"] = (
+            rfm["Monetary"].rank(pct=True) * 100
+        )
+
+        rfm.fillna(0, inplace=True)
+
         return rfm
 
     # =====================================================
-    # CLUSTER SEGMENTATION
+    # ENTERPRISE BUSINESS SEGMENTATION
     # =====================================================
     def segment(self, rfm_df, n_clusters=4):
 
-        features = ["Recency", "Frequency", "Monetary"]
+        # Optional clustering layer (analytics only)
+        rfm_df["Monetary_Log"] = np.log1p(rfm_df["Monetary"])
+        rfm_df["Frequency_Log"] = np.log1p(rfm_df["Frequency"])
+
+        features = ["Recency", "Frequency_Log", "Monetary_Log"]
 
         scaler = StandardScaler()
         scaled_data = scaler.fit_transform(rfm_df[features])
@@ -70,41 +96,65 @@ class RFMSegmenter:
 
         rfm_df["Cluster"] = kmeans.fit_predict(scaled_data)
 
-        # Save models
         os.makedirs("models", exist_ok=True)
         joblib.dump(kmeans, "models/rfm_kmeans.pkl")
         joblib.dump(scaler, "models/rfm_scaler.pkl")
 
-        # Add business intelligence layer
+        # Apply enterprise business rules
         rfm_df = self._assign_segment_labels(rfm_df)
 
         return rfm_df
 
     # =====================================================
-    # SEGMENT LABELING (BUSINESS LAYER)
+    # TRUE ENTERPRISE SEGMENT LOGIC
     # =====================================================
     def _assign_segment_labels(self, rfm_df):
 
-        cluster_summary = (
-            rfm_df.groupby("Cluster")[["Recency", "Frequency", "Monetary"]]
-            .mean()
-            .sort_values("Monetary", ascending=False)
-        )
+        def classify(row):
 
-        cluster_order = cluster_summary.index.tolist()
+            # LOST CUSTOMERS
+            if row["Recency"] > 365:
+                return "Lost Customers"
 
-        label_map = {}
+            # VIP CUSTOMERS
+            if (
+                row["Recency"] <= 180 and
+                row["Frequency"] >= 3 and
+                row["Revenue_Percentile"] >= 80
+            ):
+                return "VIP Customers"
 
-        if len(cluster_order) >= 4:
-            label_map[cluster_order[0]] = "VIP Customers"
-            label_map[cluster_order[1]] = "Loyal Customers"
-            label_map[cluster_order[2]] = "New Customers"
-            label_map[cluster_order[3]] = "Lost Customers"
-        else:
-            for i, cluster in enumerate(cluster_order):
-                label_map[cluster] = f"Segment {i}"
+            # LOYAL CUSTOMERS
+            if (
+                row["Recency"] <= 180 and
+                row["Frequency"] >= 2
+            ):
+                return "Loyal Customers"
 
-        rfm_df["Segment"] = rfm_df["Cluster"].map(label_map)
+            # HIGH POTENTIAL (High revenue but low frequency)
+            if (
+                row["Revenue_Percentile"] >= 75 and
+                row["Frequency"] == 1
+            ):
+                return "High Potential Customers"
+
+            # NEW CUSTOMERS
+            if row["Frequency"] == 1 and row["Recency"] <= 90:
+                return "New Customers"
+
+            return "Regular Customers"
+
+        rfm_df["Segment"] = rfm_df.apply(classify, axis=1)
+
+        # Strategic Tier Assignment
+        rfm_df["Strategic_Tier"] = rfm_df["Segment"].map({
+            "VIP Customers": "Core Revenue Driver",
+            "Loyal Customers": "Growth Asset",
+            "High Potential Customers": "Upside – Convert to Loyal",
+            "New Customers": "Onboarding Phase",
+            "Regular Customers": "Maintain Engagement",
+            "Lost Customers": "Revenue At Risk"
+        })
 
         return rfm_df
 
@@ -116,19 +166,23 @@ class RFMSegmenter:
 
         strategies = {
             "VIP Customers":
-                "Retention priority. Offer exclusive rewards & premium services.",
+                "Protect aggressively. Provide exclusive rewards and retention benefits.",
             "Loyal Customers":
-                "Cross-sell, subscription incentives, and referral programs.",
+                "Cross-sell, subscription plans, loyalty reinforcement.",
+            "High Potential Customers":
+                "Encourage repeat purchase and loyalty conversion.",
             "New Customers":
-                "Engage with onboarding campaigns and repeat-purchase incentives.",
+                "Strong onboarding, first-repeat incentives.",
+            "Regular Customers":
+                "Engagement campaigns and value reminders.",
             "Lost Customers":
-                "Launch aggressive win-back campaigns and discount strategies."
+                "Reactivation campaign and targeted offers."
         }
 
         return strategies.get(segment, "No strategy defined.")
 
     # =====================================================
-    # REVENUE INTELLIGENCE
+    # REVENUE CONTRIBUTION
     # =====================================================
     @staticmethod
     def revenue_contribution(rfm_df):
