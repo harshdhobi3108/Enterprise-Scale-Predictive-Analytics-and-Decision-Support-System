@@ -23,30 +23,24 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-
-/* ===== MAIN BACKGROUND ===== */
 .stApp {
     background: linear-gradient(180deg, #0b1220 0%, #0e1627 100%);
 }
 
-/* ===== CONTENT CONTAINER ===== */
 .block-container {
     padding-top: 2rem;
     padding-bottom: 2rem;
     max-width: 1400px;
 }
 
-/* ===== REMOVE SIDEBAR SPACE ===== */
 section[data-testid="stSidebar"] {
     display: none;
 }
 
-/* ===== HEADINGS ===== */
 h1, h2, h3 {
     font-weight: 600 !important;
 }
 
-/* ===== KPI CARDS ===== */
 div[data-testid="metric-container"] {
     background: rgba(255,255,255,0.03);
     border: 1px solid rgba(255,255,255,0.06);
@@ -54,7 +48,6 @@ div[data-testid="metric-container"] {
     border-radius: 14px;
 }
 
-/* ===== BUTTONS ===== */
 .stButton button {
     background-color: #1f2937;
     border: 1px solid rgba(255,255,255,0.1);
@@ -66,7 +59,6 @@ div[data-testid="metric-container"] {
     background-color: #111827;
 }
 
-/* ===== NAVIGATION BAR ===== */
 .nav-container {
     padding: 8px;
     border-radius: 12px;
@@ -75,19 +67,17 @@ div[data-testid="metric-container"] {
     margin-bottom: 25px;
 }
 
-/* ===== FOOTER ===== */
 .footer {
     text-align:center;
     font-size:13px;
     color:#6b7280;
     padding:15px;
 }
-
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================================
-# SAFE MODULE IMPORTS
+# MODULE IMPORTS
 # ==========================================================
 
 try:
@@ -95,12 +85,13 @@ try:
     from app.delivery_module import run_delivery_dashboard
     from app.revenue_module import run_revenue_dashboard
     from app.retention_module import run_retention_dashboard
+    from app.ai_assistant.assistant_ui import run_ai_assistant   # ✅ ADD THIS
 except Exception as e:
     st.error(f"Module import failed: {e}")
     st.stop()
 
 # ==========================================================
-# ENTERPRISE HEADER (FIXED SPACING)
+# HEADER
 # ==========================================================
 
 st.markdown(f"""
@@ -109,7 +100,7 @@ st.markdown(f"""
     border-radius:14px;
     background: rgba(255,255,255,0.03);
     border: 1px solid rgba(255,255,255,0.06);
-    margin-bottom:30px;   /* Increased spacing */
+    margin-bottom:30px;
     display:flex;
     justify-content:space-between;
     align-items:center;
@@ -129,7 +120,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ==========================================================
-# TOP ENTERPRISE NAVIGATION
+# NAVIGATION
 # ==========================================================
 
 selected_page = option_menu(
@@ -141,27 +132,7 @@ selected_page = option_menu(
         "Lifecycle Intelligence"
     ],
     icons=["speedometer2", "truck", "currency-dollar", "people"],
-    orientation="horizontal",
-    styles={
-    "container": {
-        "padding": "8px",
-        "background": "linear-gradient(90deg, #111827 0%, #0f172a 100%)",
-        "border": "1px solid rgba(255,255,255,0.06)",
-        "border-radius": "14px",
-        "box-shadow": "0 4px 20px rgba(0,0,0,0.35)",
-    },
-    "nav-link": {
-        "font-size": "14px",
-        "text-align": "center",
-        "margin": "0px 8px",
-        "padding": "10px 18px",
-        "--hover-color": "rgba(255,255,255,0.05)",
-    },
-    "nav-link-selected": {
-        "background-color": "rgba(255,255,255,0.08)",
-        "border-radius": "10px",
-    },
-}
+    orientation="horizontal"
 )
 
 st.markdown("<br>", unsafe_allow_html=True)
@@ -181,6 +152,12 @@ elif selected_page == "Revenue Intelligence":
 
 elif selected_page == "Lifecycle Intelligence":
     run_retention_dashboard()
+
+# ==========================================================
+# FLOATING AI ASSISTANT (ALWAYS VISIBLE)
+# ==========================================================
+
+run_ai_assistant()   # ✅ THIS MAKES IT APPEAR
 
 # ==========================================================
 # FOOTER

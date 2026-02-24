@@ -1,6 +1,7 @@
 from src.data_loader import DataLoader
 from src.feature_engineering import DeliveryFeatureEngineer
 from src.model_training import DeliveryDelayModelTrainer
+from app.ai_assistant.assistant_ui import run_ai_assistant
 
 
 def main():
@@ -31,6 +32,7 @@ def main():
     trainer.show_feature_importance()
     trainer.save_model()
 
+    run_ai_assistant()
 
 if __name__ == "__main__":
     main()
