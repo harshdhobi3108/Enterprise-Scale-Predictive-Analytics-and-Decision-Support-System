@@ -1,39 +1,72 @@
-from src.data_loader import DataLoader
-from src.feature_engineering import DeliveryFeatureEngineer
-from src.model_training import DeliveryDelayModelTrainer
-from app.ai_assistant.assistant_ui import run_ai_assistant
+"""
+Enterprise Predictive Analytics System
+Streamlit Authentication + Dashboard Launcher
+"""
+
+import streamlit as st
 
 
-def main():
-    loader = DataLoader(data_dir="data/raw")
-    data = loader.load_all()
+# =====================================================
+# PAGE CONFIGURATION
+# =====================================================
 
-    orders = data["orders"]
-    payments = data["payments"]
-    customers = data["customers"]
-
-    feature_engineer = DeliveryFeatureEngineer(orders_df=orders)
-    feature_engineer.create_target()
-    feature_engineer.create_time_features()
-    feature_engineer.clean_data()
-    feature_engineer.merge_additional_data(
-        payments_df=payments,
-        customers_df=customers
-    )
-
-    processed_df = feature_engineer.get_processed_data()
-    print("\nClass Distribution:")
-    print(processed_df["is_delayed"].value_counts(normalize=True))
+st.set_page_config(
+    page_title="Enterprise Predictive Analytics Suite",
+    layout="wide"
+)
 
 
-    trainer = DeliveryDelayModelTrainer(df=processed_df)
-    trainer.train()
-    trainer.evaluate()
-    trainer.show_feature_importance()
-    trainer.save_model()
+# =====================================================
+# LOGIN STATE
+# =====================================================
 
-    run_ai_assistant()
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
 
-if __name__ == "__main__":
-    main()
 
+# =====================================================
+# LOGIN PAGE
+# =====================================================
+
+if not st.session_state.authenticated:
+
+    st.markdown("""
+    <div style='text-align:center;margin-top:120px'>
+        <h1>Enterprise Predictive Analytics Suite</h1>
+        <p>Secure access required</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    username = st.text_input("Username")
+    password = st.text_input("Password", type="password")
+
+    if st.button("Sign In"):
+
+        if username == "admin" and password == "admin123":
+            st.session_state.authenticated = True
+            st.rerun()
+        else:
+            st.error("Invalid username or password")
+
+    st.stop()
+
+
+# =====================================================
+# DASHBOARD LAUNCH
+# =====================================================
+
+st.success("Login successful")
+
+st.write("Open the analytics dashboard below.")
+
+st.markdown(
+    """
+    ### Enterprise Analytics Dashboard
+
+    Click below to open the full dashboard.
+    """
+)
+
+st.markdown(
+    "[Open Dashboard](http://localhost:8501)"
+)

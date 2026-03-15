@@ -43,7 +43,7 @@ def run_ai_assistant():
     <style>
 
     /* Floating Button */
-    div[data-testid="stButton"] > button:first-child {
+    if st.button("AI Copilot", key="copilot_toggle"):{
         position: fixed;
         bottom: 30px;
         right: 30px;
@@ -136,3 +136,5 @@ def run_ai_assistant():
 
         st.markdown('</div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
+
+

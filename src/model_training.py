@@ -1,8 +1,3 @@
-"""
-Enterprise Delivery Delay Prediction System
-Production-Grade Professional Dashboard
-"""
-
 import streamlit as st
 import pandas as pd
 import joblib
@@ -10,10 +5,9 @@ import plotly.express as px
 import plotly.graph_objects as go
 import shap
 
+from auth.google_auth import google_login
 
-# --------------------------------------------------
-# Page Configuration
-# --------------------------------------------------
+
 st.set_page_config(
     page_title="Enterprise Delivery Delay System",
     layout="wide"
@@ -21,8 +15,18 @@ st.set_page_config(
 
 
 # --------------------------------------------------
+# Logout Button
+# --------------------------------------------------
+st.sidebar.success("Logged in")
+if st.sidebar.button("Logout"):
+    st.session_state.logged_in = False
+    st.rerun()
+
+
+# --------------------------------------------------
 # Resource Loading (Cached)
 # --------------------------------------------------
+
 @st.cache_resource
 def load_model():
     return joblib.load("models/delivery_delay_model.pkl")
@@ -34,8 +38,8 @@ def load_feature_importance():
 
 
 @st.cache_resource
-def load_explainer(model):
-    return shap.TreeExplainer(model)
+def load_explainer(_model):
+    return shap.TreeExplainer(_model)
 
 
 model = load_model()
@@ -46,6 +50,7 @@ explainer = load_explainer(model)
 # --------------------------------------------------
 # Header
 # --------------------------------------------------
+
 st.title("Enterprise Delivery Delay Prediction System")
 st.markdown("Predictive Analytics and Decision Support Dashboard")
 
@@ -55,6 +60,7 @@ st.divider()
 # --------------------------------------------------
 # Sidebar – Input Parameters
 # --------------------------------------------------
+
 st.sidebar.header("Order Parameters")
 
 purchase_hour = st.sidebar.slider("Purchase Hour", 0, 23, 12)
@@ -85,6 +91,7 @@ payment_installments = st.sidebar.slider(
 # --------------------------------------------------
 # Input Data Preparation
 # --------------------------------------------------
+
 input_data = pd.DataFrame([{
     "purchase_hour": purchase_hour,
     "purchase_dayofweek": purchase_dayofweek,
@@ -100,11 +107,16 @@ input_data = pd.DataFrame([{
 # --------------------------------------------------
 # Prediction Section
 # --------------------------------------------------
+
 st.subheader("Delay Risk Prediction")
 
 probability = float(model.predict_proba(input_data)[0][1])
 
-col1, col2 = st.columns(2)
+col1, col2, col3 = st.columns(3)
+
+col1.metric("Model AUC", "0.77")
+col2.metric("Prediction Confidence", f"{probability:.2%}")
+col3.metric("Model Type", "LightGBM")
 
 with col1:
     st.metric("Predicted Delay Probability", f"{probability:.2%}")
@@ -121,6 +133,7 @@ with col2:
 # --------------------------------------------------
 # Risk Gauge
 # --------------------------------------------------
+
 st.subheader("Risk Confidence Indicator")
 
 gauge = go.Figure(go.Indicator(
@@ -138,22 +151,21 @@ gauge = go.Figure(go.Indicator(
     }
 ))
 
-st.plotly_chart(gauge, use_container_width=True)
+st.plotly_chart(gauge, width="stretch")
 
 st.divider()
 
 
 # --------------------------------------------------
-# SHAP Explainability – Robust Implementation
+# SHAP Explainability
 # --------------------------------------------------
+
 st.subheader("Explainable AI – Feature Contributions")
 
 try:
     shap_values = explainer.shap_values(input_data)
 
-    # Robust handling of SHAP output format
     if isinstance(shap_values, list):
-        # If multiple classes exist, use positive class if available
         if len(shap_values) > 1:
             shap_array = shap_values[1][0]
         else:
@@ -172,7 +184,7 @@ try:
         .reset_index(drop=True)
     )
 
-    st.dataframe(shap_df, use_container_width=True)
+    st.dataframe(shap_df, width="stretch")
 
 except Exception as error:
     st.error("Explainability module could not be generated.")
@@ -185,6 +197,7 @@ st.divider()
 # --------------------------------------------------
 # Global Feature Importance
 # --------------------------------------------------
+
 st.subheader("Global Model Feature Importance")
 
 importance_chart = px.bar(
@@ -195,7 +208,7 @@ importance_chart = px.bar(
     title="Feature Importance Ranking"
 )
 
-st.plotly_chart(importance_chart, use_container_width=True)
+st.plotly_chart(importance_chart, width="stretch")
 
 st.divider()
 
@@ -203,6 +216,7 @@ st.divider()
 # --------------------------------------------------
 # Model Overview
 # --------------------------------------------------
+
 st.subheader("Model Overview")
 
 st.markdown("""
