@@ -39,10 +39,11 @@ def run_revenue_dashboard():
     """, unsafe_allow_html=True)
 
     # ==========================================================
-    # LOAD DATA
+    # LOAD DATA + GLOBAL CUSTOMER MASTER
     # ==========================================================
     @st.cache_data
     def load_rfm():
+
         loader = DataLoader(data_dir="data/raw")
         data = loader.load_all()
 
@@ -55,9 +56,21 @@ def run_revenue_dashboard():
         rfm_df = segmenter.build_rfm()
         segmented_df = segmenter.segment(rfm_df, n_clusters=4)
 
-        return segmented_df, segmenter
+        # 🔥 GLOBAL CUSTOMER MASTER (FIXED)
+        customer_master = (
+            data["customers"]
+            .sort_values("customer_unique_id")
+            .drop_duplicates("customer_unique_id")
+            .reset_index(drop=True)
+        )
 
-    rfm, segmenter = load_rfm()
+        customer_master["customer_code"] = (
+            "CUST-" + (customer_master.index + 1).astype(str).str.zfill(5)
+        )
+
+        return segmented_df, segmenter, customer_master
+
+    rfm, segmenter, customer_master = load_rfm()
 
     # ==========================================================
     # HEADER
@@ -74,7 +87,7 @@ def run_revenue_dashboard():
     st.markdown("<hr style='border:1px solid rgba(255,255,255,0.08);'>", unsafe_allow_html=True)
 
     # ==========================================================
-    # EXECUTIVE KPI SECTION
+    # EXECUTIVE KPIs
     # ==========================================================
     total_customers = len(rfm)
     total_revenue = rfm["Monetary"].sum()
@@ -155,14 +168,20 @@ def run_revenue_dashboard():
 
         st.subheader("Customer Intelligence Profile")
 
+        # 🔥 MERGE WITH GLOBAL CUSTOMER MASTER
+        rfm = rfm.merge(
+            customer_master[
+                ["customer_unique_id", "customer_code"]
+            ],
+            on="customer_unique_id",
+            how="left"
+        )
+
         rfm_sorted = rfm.sort_values("Monetary", ascending=False).reset_index(drop=True)
 
-        rfm_sorted["Customer_Code"] = [
-            f"CUST-{str(i+1).zfill(5)}" for i in range(len(rfm_sorted))
-        ]
-
+        # ✅ CONSISTENT DISPLAY FORMAT
         rfm_sorted["Display_Label"] = (
-            rfm_sorted["Customer_Code"]
+            rfm_sorted["customer_code"]
             + " | "
             + rfm_sorted["Customer_City"].str.title()
             + " | "
@@ -214,7 +233,7 @@ def run_revenue_dashboard():
         st.markdown("<br>", unsafe_allow_html=True)
 
         # ===============================
-        # STRATEGIC INSIGHT PANEL
+        # STRATEGIC INSIGHT
         # ===============================
         st.markdown(f"""
         <div style="padding:20px;border-radius:15px;

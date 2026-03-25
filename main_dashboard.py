@@ -3,12 +3,14 @@ Enterprise Predictive Analytics Suite
 Production-Grade AI Intelligence Platform
 """
 
+from dotenv import load_dotenv
+load_dotenv()
+
 import streamlit as st
 import streamlit.components.v1 as components
 from datetime import datetime
 from streamlit_option_menu import option_menu
 from auth.google_auth_streamlit import google_login
-
 
 # ==========================================================
 # PAGE CONFIGURATION
@@ -165,8 +167,6 @@ from app.command_center_module import run_command_center
 from app.delivery_module import run_delivery_dashboard
 from app.revenue_module import run_revenue_dashboard
 from app.retention_module import run_retention_dashboard
-from app.ai_assistant.assistant_ui import run_ai_assistant
-
 
 # ==========================================================
 # USER SESSION DATA
@@ -270,13 +270,6 @@ elif selected_page == "Revenue Intelligence":
 
 elif selected_page == "Lifecycle Intelligence":
     run_retention_dashboard()
-
-
-# ==========================================================
-# FLOATING AI ASSISTANT
-# ==========================================================
-
-run_ai_assistant()
 
 
 # ==========================================================

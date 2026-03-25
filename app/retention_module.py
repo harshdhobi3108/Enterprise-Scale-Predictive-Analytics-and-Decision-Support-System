@@ -1,6 +1,7 @@
 """
 Customer Lifecycle Intelligence Dashboard
 Retention Prediction + SHAP Explainability
+(Fully Fixed Version - Clean Customer Mapping)
 """
 
 import streamlit as st
@@ -18,7 +19,7 @@ MODEL_PATH = "models/retention_model.pkl"
 
 
 # ==========================================================
-# Load Retention Features
+# Load Retention Features + Customer Info
 # ==========================================================
 @st.cache_data
 def load_retention_features():
@@ -50,9 +51,25 @@ def load_retention_features():
         how="left"
     )
 
+    # Build features
     features = build_retention_features(orders, payments, reviews)
 
-    return features
+    # ==========================================================
+    # FIXED CUSTOMER MASTER TABLE (NO DUPLICATES)
+    # ==========================================================
+    customer_info = (
+        customers
+        .sort_values("customer_unique_id")
+        .drop_duplicates("customer_unique_id")
+        .reset_index(drop=True)
+    )
+
+    # Create clean business ID
+    customer_info["customer_code"] = (
+        "CUST-" + (customer_info.index + 1).astype(str).str.zfill(5)
+    )
+
+    return features, customer_info
 
 
 # ==========================================================
@@ -63,53 +80,110 @@ def run_retention_dashboard():
     st.title("Customer Lifecycle Intelligence")
 
     # ---------------------------------------------------------
-    # Load Model & Features
+    # Load Model (compatible with old + new)
     # ---------------------------------------------------------
-    model = joblib.load(MODEL_PATH)
+    model_bundle = joblib.load(MODEL_PATH)
+
+    if isinstance(model_bundle, dict):
+        model = model_bundle["model"]
+        threshold = model_bundle.get("threshold", 0.5)
+    else:
+        model = model_bundle
+        threshold = 0.5
+
     explainer = RetentionExplainer(MODEL_PATH)
 
-    features_df = load_retention_features()
+    # ---------------------------------------------------------
+    # Load Data
+    # ---------------------------------------------------------
+    features_df, customer_info = load_retention_features()
 
     # ---------------------------------------------------------
-    # Compute Probabilities for All Customers
+    # Merge Customer Info (CLEAN JOIN)
     # ---------------------------------------------------------
-    X_all = features_df.drop(columns=["customer_unique_id"])
+    features_df = features_df.merge(
+        customer_info[
+            ["customer_unique_id", "customer_code", "customer_city", "customer_state"]
+        ],
+        on="customer_unique_id",
+        how="left"
+    )
+
+    # ---------------------------------------------------------
+    # Create Display Column (MATCHES FIRST PAGE)
+    # ---------------------------------------------------------
+    features_df["customer_display"] = (
+        features_df["customer_code"] +
+        " | " +
+        features_df["customer_city"].str.title() +
+        " | " +
+        features_df["customer_state"]
+    )
+
+    # ---------------------------------------------------------
+    # Compute Probabilities
+    # ---------------------------------------------------------
+    X_all = features_df.drop(columns=[
+        "customer_unique_id",
+        "customer_code",
+        "customer_city",
+        "customer_state",
+        "customer_display"
+    ])
+
     probabilities = model.predict_proba(X_all)[:, 1]
-
     features_df["retention_probability"] = probabilities
 
     # ---------------------------------------------------------
-    # Show Top Retention Customers
+    # Top Customers
     # ---------------------------------------------------------
     st.subheader("Top Likely To Retain Customers")
 
     top_customers = (
         features_df
         .sort_values("retention_probability", ascending=False)
+        .drop_duplicates(subset=["customer_code"])
         .head(5)
     )
 
     st.dataframe(
         top_customers[
-            ["customer_unique_id", "retention_probability"]
-        ]
+            ["customer_display", "retention_probability"]
+        ].rename(columns={
+            "customer_display": "Customer",
+            "retention_probability": "Retention Probability"
+        })
     )
 
     st.markdown("---")
 
     # ---------------------------------------------------------
-    # Select Customer
+    # Customer Selection
     # ---------------------------------------------------------
-    customer_ids = features_df["customer_unique_id"].tolist()
-
-    selected_customer = st.selectbox(
-        "Select Customer",
-        customer_ids
+    customer_map = dict(
+        zip(features_df["customer_display"], features_df["customer_unique_id"])
     )
 
+    selected_display = st.selectbox(
+        "Select Customer",
+        list(customer_map.keys())
+    )
+
+    selected_customer = customer_map[selected_display]
+
+    # ---------------------------------------------------------
+    # Prepare Customer Data
+    # ---------------------------------------------------------
     customer_data = features_df[
         features_df["customer_unique_id"] == selected_customer
-    ].drop(columns=["customer_unique_id", "retention_probability"])
+    ].drop(columns=[
+        "customer_unique_id",
+        "customer_code",
+        "customer_city",
+        "customer_state",
+        "customer_display",
+        "retention_probability"
+    ])
 
     # ---------------------------------------------------------
     # Prediction
@@ -118,15 +192,13 @@ def run_retention_dashboard():
 
     st.metric("Retention Probability (%)", f"{probability * 100:.2f}")
 
-    if probability < 0.3:
+    if probability < threshold:
         st.error("High Churn Risk")
-    elif probability < 0.6:
-        st.warning("Moderate Risk")
     else:
         st.success("Likely to Retain")
 
     # ---------------------------------------------------------
-    # LOCAL SHAP (Waterfall Plot – works better in Streamlit)
+    # LOCAL SHAP
     # ---------------------------------------------------------
     st.subheader("Why this prediction?")
 
@@ -145,7 +217,7 @@ def run_retention_dashboard():
     # ---------------------------------------------------------
     st.subheader("Global Retention Drivers")
 
-    sample_data = X_all.sample(1000)
+    sample_data = X_all.sample(min(1000, len(X_all)))
     shap_values_global, X_global = explainer.explain_global(sample_data)
 
     fig_global = plt.figure()

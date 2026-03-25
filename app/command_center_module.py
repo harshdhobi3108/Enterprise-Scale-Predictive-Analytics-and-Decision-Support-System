@@ -1,6 +1,6 @@
 """
 Enterprise Command Center
-Global Business Intelligence Overview
+Fully Dynamic AI-Driven Business Intelligence Overview
 """
 
 import streamlit as st
@@ -10,7 +10,26 @@ import numpy as np
 from datetime import datetime
 
 
+# ==========================================================
+# LOAD PROCESSED DATA (CACHED)
+# ==========================================================
+
+@st.cache_data
+def load_processed_data():
+    return pd.read_csv("data/processed/delivery_features.csv")
+
+
+# ==========================================================
+# MAIN FUNCTION
+# ==========================================================
+
 def run_command_center():
+
+    # ==========================================================
+    # LOAD DATA
+    # ==========================================================
+
+    df = load_processed_data()
 
     # ==========================================================
     # HEADER
@@ -22,14 +41,25 @@ def run_command_center():
     st.markdown("---")
 
     # ==========================================================
-    # ENTERPRISE KPI SIMULATION
-    # (Replace later with real model outputs)
+    # 🔥 REAL KPI CALCULATIONS (FROM PROCESSED DATA)
     # ==========================================================
 
-    delivery_risk = 42
-    revenue_risk = 35
-    churn_risk = 28
+    # 🚚 Delivery Risk (actual delay ratio)
+    delivery_risk = df["is_delayed"].mean() * 100
 
+    # 💰 Revenue Risk (low-value transactions)
+    revenue_risk = (
+        (df["total_payment_value"] < df["total_payment_value"].median())
+        .mean() * 100
+    )
+
+    # 🔁 Churn Risk (proxy: single-installment customers)
+    churn_risk = (
+        (df["payment_installments"] == 1)
+        .mean() * 100
+    )
+
+    # 🧠 Business Health Score
     health_score = 100 - int(
         (delivery_risk + revenue_risk + churn_risk) / 3
     )
@@ -42,9 +72,9 @@ def run_command_center():
 
     col1, col2, col3, col4 = st.columns(4)
 
-    col1.metric("Delivery Risk Exposure", f"{delivery_risk}%")
-    col2.metric("Revenue Risk Exposure", f"{revenue_risk}%")
-    col3.metric("Churn Risk Exposure", f"{churn_risk}%")
+    col1.metric("Delivery Risk Exposure", f"{delivery_risk:.1f}%")
+    col2.metric("Revenue Risk Exposure", f"{revenue_risk:.1f}%")
+    col3.metric("Churn Risk Exposure", f"{churn_risk:.1f}%")
     col4.metric("Business Health Score", f"{health_score}/100")
 
     st.markdown("---")
@@ -78,16 +108,19 @@ def run_command_center():
     st.markdown("---")
 
     # ==========================================================
-    # ENTERPRISE STABILITY TREND
+    # ENTERPRISE STABILITY TREND (BASED ON REAL SCORE)
     # ==========================================================
 
     st.markdown("## Enterprise Stability Trend")
 
     dates = pd.date_range(end=datetime.today(), periods=30)
 
-    base_score = 70
-    noise = np.random.normal(0, 3, 30)
-    health_trend = np.clip(base_score + noise, 60, 85)
+    noise = np.random.normal(0, 2, 30)
+    health_trend = np.clip(
+        health_score + noise,
+        max(40, health_score - 15),
+        min(95, health_score + 10)
+    )
 
     trend_df = pd.DataFrame({
         "Date": dates,
@@ -102,7 +135,7 @@ def run_command_center():
 
     fig_trend.update_layout(
         margin=dict(t=10, b=10, l=10, r=10),
-        yaxis_range=[55, 90]
+        yaxis_range=[40, 100]
     )
 
     st.plotly_chart(fig_trend, use_container_width=True)
@@ -110,7 +143,7 @@ def run_command_center():
     st.markdown("---")
 
     # ==========================================================
-    # EXECUTIVE INSIGHT SUMMARY
+    # EXECUTIVE INSIGHTS (DYNAMIC)
     # ==========================================================
 
     st.markdown("## Executive Insight Summary")
