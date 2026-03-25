@@ -1,24 +1,18 @@
 import streamlit as st
 import requests
 from streamlit_oauth import OAuth2Component
-import os
-from dotenv import load_dotenv
 
 # ==========================================================
-# LOAD ENV VARIABLES
+# LOAD SECRETS
 # ==========================================================
-load_dotenv()
-
-CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
-CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+CLIENT_ID = st.secrets["GOOGLE_CLIENT_ID"]
+CLIENT_SECRET = st.secrets["GOOGLE_CLIENT_SECRET"]
+REDIRECT_URI = st.secrets.get("REDIRECT_URI", "http://localhost:8501")
 
 AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 USER_INFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
 
-REDIRECT_URI = os.getenv("REDIRECT_URI", "http://localhost:8501")
-
-# Default fallback avatar
 DEFAULT_AVATAR = "https://cdn-icons-png.flaticon.com/512/149/149071.png"
 
 # ==========================================================
@@ -57,14 +51,10 @@ def google_login():
 
         user_info = response.json()
 
-        # Store user info safely
         st.session_state["user_email"] = user_info.get("email", "")
         st.session_state["user_name"] = user_info.get("name", "User")
 
-        # Avatar handling
         picture = user_info.get("picture", DEFAULT_AVATAR)
-
-        # Improve Google avatar resolution
         if "googleusercontent" in picture:
             picture = picture.replace("=s96", "=s200")
 
