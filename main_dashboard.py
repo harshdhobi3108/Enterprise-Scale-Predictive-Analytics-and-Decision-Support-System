@@ -2,10 +2,6 @@
 Enterprise Predictive Analytics Suite
 Production-Grade AI Intelligence Platform
 """
-
-from dotenv import load_dotenv
-load_dotenv()
-
 import streamlit as st
 import streamlit.components.v1 as components
 from datetime import datetime
