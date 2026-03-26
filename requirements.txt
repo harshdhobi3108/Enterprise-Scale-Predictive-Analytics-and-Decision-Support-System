@@ -5,3 +5,4 @@ plotly
 shap
 scikit-learn
 streamlit-option-menu
+streamlit-oauth
