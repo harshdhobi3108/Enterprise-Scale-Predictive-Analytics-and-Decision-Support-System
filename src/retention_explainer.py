@@ -1,6 +1,6 @@
 """
 Retention SHAP Explainer
-(Production-Grade | Fully Safe | Streamlit Compatible)
+(Production-Grade | Streamlit Safe | SHAP Fixed)
 """
 
 import joblib
@@ -21,14 +21,13 @@ class RetentionExplainer:
 
     def __init__(self, model_path: str):
 
-        # Load model
         self.pipeline = joblib.load(model_path)
 
         self.preprocessor = None
         self.model = None
 
         # ======================================================
-        # SAFE PIPELINE EXTRACTION (NO HARD-CODING)
+        # SAFE PIPELINE EXTRACTION
         # ======================================================
         if hasattr(self.pipeline, "named_steps"):
 
@@ -43,13 +42,13 @@ class RetentionExplainer:
                     self.model = step
 
         else:
-            raise ValueError("Loaded model is not a valid sklearn Pipeline")
+            raise ValueError("Loaded model is not a Pipeline")
 
         if self.model is None:
-            raise ValueError("No classifier found inside pipeline")
+            raise ValueError("Classifier not found in pipeline")
 
         # ======================================================
-        # INIT SHAP (SAFE)
+        # INIT SHAP
         # ======================================================
         if SHAP_AVAILABLE:
             try:
@@ -60,26 +59,21 @@ class RetentionExplainer:
             self.explainer = None
 
     # ==========================================================
-    # GET FEATURE NAMES AFTER TRANSFORMATION
+    # INTERNAL HELPERS
     # ==========================================================
-    def _get_feature_names(self):
+    def _transform(self, X):
+        if self.preprocessor is not None:
+            return self.preprocessor.transform(X)
+        return X
 
+    def _get_feature_names(self):
         try:
             return self.preprocessor.get_feature_names_out()
         except Exception:
             return None
 
     # ==========================================================
-    # TRANSFORM DATA SAFELY
-    # ==========================================================
-    def _transform(self, X):
-
-        if self.preprocessor is not None:
-            return self.preprocessor.transform(X)
-        return X
-
-    # ==========================================================
-    # LOCAL EXPLANATION
+    # GET SHAP VALUES
     # ==========================================================
     def explain_instance(self, X):
 
@@ -93,7 +87,6 @@ class RetentionExplainer:
 
             feature_names = self._get_feature_names()
 
-            # Fallback if feature names not available
             if feature_names is None:
                 feature_names = [f"f_{i}" for i in range(X_transformed.shape[1])]
 
@@ -105,34 +98,51 @@ class RetentionExplainer:
             return shap_values, X_named
 
         except Exception as e:
-            print("SHAP instance error:", str(e))
+            print("SHAP error:", str(e))
             return None, X
 
     # ==========================================================
-    # GLOBAL EXPLANATION
+    # WATERFALL PLOT (FIXED)
     # ==========================================================
-    def explain_global(self, X):
+    def plot_waterfall(self, shap_values, X_named, index=0):
 
         if not SHAP_AVAILABLE or self.explainer is None:
-            return None, X
+            return None
 
         try:
-            X_transformed = self._transform(X)
+            # ✅ FIX: Always use class 1
+            expected_value = self.explainer.expected_value[1]
+            shap_val = shap_values[1][index]
+            features = X_named.iloc[index]
 
-            shap_values = self.explainer.shap_values(X_transformed)
-
-            feature_names = self._get_feature_names()
-
-            if feature_names is None:
-                feature_names = [f"f_{i}" for i in range(X_transformed.shape[1])]
-
-            X_named = pd.DataFrame(
-                X_transformed,
-                columns=feature_names
+            fig = shap.plots._waterfall.waterfall_legacy(
+                expected_value,
+                shap_val,
+                features
             )
 
-            return shap_values, X_named
+            return fig
 
         except Exception as e:
-            print("SHAP global error:", str(e))
-            return None, X
+            print("Waterfall plot error:", str(e))
+            return None
+
+    # ==========================================================
+    # GLOBAL FEATURE IMPORTANCE
+    # ==========================================================
+    def global_importance(self, shap_values):
+
+        if shap_values is None:
+            return None
+
+        try:
+            # mean absolute SHAP values for class 1
+            import numpy as np
+
+            importance = np.abs(shap_values[1]).mean(axis=0)
+
+            return importance
+
+        except Exception as e:
+            print("Global importance error:", str(e))
+            return None
