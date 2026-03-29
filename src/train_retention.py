@@ -7,10 +7,14 @@ import pandas as pd
 import joblib
 import os
 
-# ✅ FIXED IMPORTS (CRITICAL)
+from sklearn.pipeline import Pipeline
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.ensemble import RandomForestClassifier
+
+# ✅ FIXED IMPORTS
 from src.data_loader import DataLoader
 from src.retention_features import build_retention_features
-from src.retention_model import train_retention_model
 
 
 # ==========================================================
@@ -27,6 +31,38 @@ def create_retention_target_future(future_orders):
 
     retention["retained"] = 1
     return retention[["customer_unique_id", "retained"]]
+
+
+# ==========================================================
+# Build Pipeline (PRODUCTION SAFE)
+# ==========================================================
+def build_pipeline(X):
+
+    numeric_features = X.select_dtypes(include=["int64", "float64"]).columns.tolist()
+    categorical_features = X.select_dtypes(include=["object"]).columns.tolist()
+
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ("num", StandardScaler(), numeric_features),
+            ("cat", OneHotEncoder(handle_unknown="ignore"), categorical_features),
+        ]
+    )
+
+    model = RandomForestClassifier(
+        n_estimators=200,
+        max_depth=10,
+        random_state=42,
+        n_jobs=-1
+    )
+
+    pipeline = Pipeline(
+        steps=[
+            ("preprocessor", preprocessor),
+            ("classifier", model)
+        ]
+    )
+
+    return pipeline
 
 
 # ==========================================================
@@ -128,26 +164,27 @@ def main():
     print(y.value_counts())
 
     # ==========================================================
-    # STEP 8: Train Model
+    # STEP 8: Train Pipeline
     # ==========================================================
-    print("\nTraining retention model...")
-    model = train_retention_model(X, y)
+    print("\nBuilding pipeline...")
+    pipeline = build_pipeline(X)
 
-    print("\nRetention model training complete.")
+    print("Training model...")
+    pipeline.fit(X, y)
+
+    print("\nModel training complete.")
 
     # ==========================================================
-    # ✅ STEP 9: SAVE MODEL + FEATURES (CRITICAL)
+    # STEP 9: SAVE MODEL + FEATURES
     # ==========================================================
     os.makedirs("models", exist_ok=True)
 
-    joblib.dump(model, "models/delivery_delay_model.pkl")
-
-    # Save feature names (VERY IMPORTANT for Streamlit)
+    joblib.dump(pipeline, "models/retention_model.pkl")
     joblib.dump(list(X.columns), "models/model_features.pkl")
 
     print("Model saved successfully.")
 
-    return model
+    return pipeline
 
 
 if __name__ == "__main__":
