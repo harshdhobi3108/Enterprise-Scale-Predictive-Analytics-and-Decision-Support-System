@@ -1,14 +1,23 @@
 """
 Customer Lifecycle Intelligence Dashboard
 Retention Prediction + SHAP Explainability
-(Fully Fixed Version - Clean Customer Mapping)
+(Deployment-Safe Version - SHAP Optional)
 """
 
 import streamlit as st
 import joblib
 import pandas as pd
-import shap
 import matplotlib.pyplot as plt
+
+# ==========================================================
+# SAFE SHAP IMPORT (CRITICAL FIX)
+# ==========================================================
+try:
+    import shap
+    SHAP_AVAILABLE = True
+except ImportError:
+    shap = None
+    SHAP_AVAILABLE = False
 
 from src.data_loader import DataLoader
 from src.retention_features import build_retention_features
@@ -54,9 +63,7 @@ def load_retention_features():
     # Build features
     features = build_retention_features(orders, payments, reviews)
 
-    # ==========================================================
-    # FIXED CUSTOMER MASTER TABLE (NO DUPLICATES)
-    # ==========================================================
+    # Clean customer table
     customer_info = (
         customers
         .sort_values("customer_unique_id")
@@ -64,7 +71,7 @@ def load_retention_features():
         .reset_index(drop=True)
     )
 
-    # Create clean business ID
+    # Business-friendly ID
     customer_info["customer_code"] = (
         "CUST-" + (customer_info.index + 1).astype(str).str.zfill(5)
     )
@@ -80,7 +87,7 @@ def run_retention_dashboard():
     st.title("Customer Lifecycle Intelligence")
 
     # ---------------------------------------------------------
-    # Load Model (compatible with old + new)
+    # Load Model
     # ---------------------------------------------------------
     model_bundle = joblib.load(MODEL_PATH)
 
@@ -98,9 +105,7 @@ def run_retention_dashboard():
     # ---------------------------------------------------------
     features_df, customer_info = load_retention_features()
 
-    # ---------------------------------------------------------
-    # Merge Customer Info (CLEAN JOIN)
-    # ---------------------------------------------------------
+    # Merge customer info
     features_df = features_df.merge(
         customer_info[
             ["customer_unique_id", "customer_code", "customer_city", "customer_state"]
@@ -109,9 +114,7 @@ def run_retention_dashboard():
         how="left"
     )
 
-    # ---------------------------------------------------------
-    # Create Display Column (MATCHES FIRST PAGE)
-    # ---------------------------------------------------------
+    # Display column
     features_df["customer_display"] = (
         features_df["customer_code"] +
         " | " +
@@ -121,7 +124,7 @@ def run_retention_dashboard():
     )
 
     # ---------------------------------------------------------
-    # Compute Probabilities
+    # Prediction Prep
     # ---------------------------------------------------------
     X_all = features_df.drop(columns=[
         "customer_unique_id",
@@ -172,7 +175,7 @@ def run_retention_dashboard():
     selected_customer = customer_map[selected_display]
 
     # ---------------------------------------------------------
-    # Prepare Customer Data
+    # Customer Data
     # ---------------------------------------------------------
     customer_data = features_df[
         features_df["customer_unique_id"] == selected_customer
@@ -197,34 +200,50 @@ def run_retention_dashboard():
     else:
         st.success("Likely to Retain")
 
-    # ---------------------------------------------------------
-    # LOCAL SHAP
-    # ---------------------------------------------------------
+    # ==========================================================
+    # SHAP SECTION (SAFE HANDLING)
+    # ==========================================================
     st.subheader("Why this prediction?")
 
-    shap_values, X_named = explainer.explain_instance(customer_data)
+    if SHAP_AVAILABLE:
+        try:
+            shap_values, X_named = explainer.explain_instance(customer_data)
 
-    fig_local = plt.figure()
-    shap.plots._waterfall.waterfall_legacy(
-        explainer.explainer.expected_value,
-        shap_values[0],
-        feature_names=X_named.columns
-    )
-    st.pyplot(fig_local)
+            fig_local = plt.figure()
+            shap.plots._waterfall.waterfall_legacy(
+                explainer.explainer.expected_value,
+                shap_values[0],
+                feature_names=X_named.columns
+            )
+            st.pyplot(fig_local)
 
-    # ---------------------------------------------------------
+        except Exception as e:
+            st.warning(f"SHAP error: {e}")
+
+    else:
+        st.info("SHAP not installed in deployment environment")
+
+    # ==========================================================
     # GLOBAL SHAP
-    # ---------------------------------------------------------
+    # ==========================================================
     st.subheader("Global Retention Drivers")
 
-    sample_data = X_all.sample(min(1000, len(X_all)))
-    shap_values_global, X_global = explainer.explain_global(sample_data)
+    if SHAP_AVAILABLE:
+        try:
+            sample_data = X_all.sample(min(1000, len(X_all)))
+            shap_values_global, X_global = explainer.explain_global(sample_data)
 
-    fig_global = plt.figure()
-    shap.summary_plot(
-        shap_values_global,
-        X_global,
-        feature_names=X_global.columns,
-        show=False
-    )
-    st.pyplot(fig_global)
+            fig_global = plt.figure()
+            shap.summary_plot(
+                shap_values_global,
+                X_global,
+                feature_names=X_global.columns,
+                show=False
+            )
+            st.pyplot(fig_global)
+
+        except Exception as e:
+            st.warning(f"Global SHAP error: {e}")
+
+    else:
+        st.info("Global SHAP not available in deployment")
