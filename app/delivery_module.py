@@ -5,24 +5,52 @@ def run_delivery_dashboard():
     import joblib
     import plotly.graph_objects as go
     import plotly.express as px
-    import shap
     import random
     from datetime import datetime
 
+    # ==========================================================
+    # SAFE SHAP IMPORT (FIXES YOUR ERROR)
+    # ==========================================================
+    try:
+        import shap
+        SHAP_AVAILABLE = True
+    except ImportError:
+        SHAP_AVAILABLE = False
 
     # ==========================================================
-    # MODEL LOADING
+    # MODEL LOADING (SAFE + PRODUCTION READY)
     # ==========================================================
     @st.cache_resource
     def load_assets():
         model = joblib.load("models/delivery_delay_model.pkl")
-        explainer = shap.TreeExplainer(model)
+
+        # Handle feature names safely
+        if hasattr(model, "feature_name_"):
+            expected_features = list(model.feature_name_)
+        else:
+            expected_features = [
+                "purchase_hour",
+                "purchase_dayofweek",
+                "purchase_month",
+                "approval_delay_hours",
+                "carrier_delay_hours",
+                "estimated_delivery_days",
+                "total_payment_value",
+                "payment_installments",
+            ]
+
         importance_df = pd.read_csv("models/feature_importance.csv")
-        return model, explainer, importance_df
 
-    model, explainer, importance_df = load_assets()
-    EXPECTED_FEATURES = list(model.feature_name_)
+        explainer = None
+        if SHAP_AVAILABLE:
+            try:
+                explainer = shap.TreeExplainer(model)
+            except Exception:
+                explainer = None
 
+        return model, explainer, importance_df, expected_features
+
+    model, explainer, importance_df, EXPECTED_FEATURES = load_assets()
 
     # ==========================================================
     # HEADER
@@ -31,7 +59,6 @@ def run_delivery_dashboard():
     st.caption("Operational Delay Risk Monitoring & Explainable AI")
     st.markdown(f"Last Updated: {datetime.now().strftime('%d %B %Y, %H:%M')}")
     st.markdown("---")
-
 
     # ==========================================================
     # CONTROL PANEL
@@ -56,37 +83,28 @@ def run_delivery_dashboard():
         purchase_month = st.slider("Month", 1, 12, 6)
 
     with filters[5]:
-        approval_delay_hours = st.number_input(
-            "Approval Delay", 0.0, 200.0, 2.0
-        )
+        approval_delay_hours = st.number_input("Approval Delay", 0.0, 200.0, 2.0)
 
     with filters[6]:
-        carrier_delay_hours = st.number_input(
-            "Carrier Delay", 0.0, 500.0, 12.0
-        )
+        carrier_delay_hours = st.number_input("Carrier Delay", 0.0, 500.0, 12.0)
 
     with filters[7]:
-        estimated_delivery_days = st.number_input(
-            "Delivery Days", 1.0, 60.0, 7.0
-        )
+        estimated_delivery_days = st.number_input("Delivery Days", 1.0, 60.0, 7.0)
 
     filters2 = st.columns(2)
 
     with filters2[0]:
-        total_payment_value = st.number_input(
-            "Payment Value", 0.0, 10000.0, 150.0
-        )
+        total_payment_value = st.number_input("Payment Value", 0.0, 10000.0, 150.0)
 
     with filters2[1]:
         payment_installments = st.slider("Installments", 1, 24, 1)
 
     st.markdown("---")
 
-
     # ==========================================================
-    # INPUT DATA
+    # INPUT DATA (SAFE ALIGNMENT)
     # ==========================================================
-    input_data = pd.DataFrame([{
+    input_dict = {
         "purchase_hour": purchase_hour,
         "purchase_dayofweek": purchase_dayofweek,
         "purchase_month": purchase_month,
@@ -95,15 +113,22 @@ def run_delivery_dashboard():
         "estimated_delivery_days": estimated_delivery_days,
         "total_payment_value": total_payment_value,
         "payment_installments": payment_installments,
-    }]).reindex(columns=EXPECTED_FEATURES)
+    }
 
+    input_data = pd.DataFrame([input_dict])
+
+    # Ensure correct feature order
+    for col in EXPECTED_FEATURES:
+        if col not in input_data:
+            input_data[col] = 0
+
+    input_data = input_data[EXPECTED_FEATURES]
 
     # ==========================================================
     # MODEL PREDICTION
     # ==========================================================
     probability = float(model.predict_proba(input_data)[0][1])
     risk_score = probability * 100
-
 
     # ==========================================================
     # RISK CLASSIFICATION
@@ -115,11 +140,9 @@ def run_delivery_dashboard():
     else:
         risk_level = "Low Risk"
 
-
     # ==========================================================
     # EXECUTIVE SNAPSHOT
     # ==========================================================
-
     orders_monitored = 1000 + int(risk_score * 5) + random.randint(0, 50)
     high_risk_exposure = max(risk_score - medium_threshold, 0)
     on_time_rate = max(100 - risk_score, 0)
@@ -137,9 +160,8 @@ def run_delivery_dashboard():
 
     st.markdown("---")
 
-
     # ==========================================================
-    # RUN DETAILED ANALYSIS
+    # DETAILED ANALYSIS
     # ==========================================================
     if st.button("Run Detailed Analysis"):
 
@@ -150,18 +172,15 @@ def run_delivery_dashboard():
         else:
             status = "Low Risk — Operations Within Acceptable Range"
 
-        st.success(
-            f"{status} | Predicted Delay Probability: {risk_score:.2f}%"
-        )
+        st.success(f"{status} | Predicted Delay Probability: {risk_score:.2f}%")
 
         # ======================================================
-        # PROFESSIONAL GAUGE
+        # GAUGE
         # ======================================================
         gauge = go.Figure(go.Indicator(
             mode="gauge+number",
             value=risk_score,
-            title={'text': "Delivery Delay Risk (%)", 'font': {'size': 20}},
-            number={'font': {'size': 48}},
+            title={'text': "Delivery Delay Risk (%)"},
             gauge={
                 'axis': {'range': [0, 100]},
                 'bar': {'color': "#ff4b4b"},
@@ -170,11 +189,6 @@ def run_delivery_dashboard():
                     {'range': [30, 60], 'color': "#ffcc00"},
                     {'range': [60, 100], 'color': "#b30000"}
                 ],
-                'threshold': {
-                    'line': {'color': "white", 'width': 4},
-                    'thickness': 0.75,
-                    'value': risk_score
-                }
             }
         ))
 
@@ -182,38 +196,60 @@ def run_delivery_dashboard():
 
         st.markdown("---")
 
-
         # ======================================================
-        # SHAP ANALYSIS
+        # SHAP (SAFE EXECUTION)
         # ======================================================
         st.markdown("## Risk Driver Analysis")
 
-        shap_values = explainer.shap_values(input_data)
-        shap_array = shap_values[1][0] if isinstance(
-            shap_values, list) else shap_values[0]
+        if SHAP_AVAILABLE and explainer is not None:
+            try:
+                shap_values = explainer.shap_values(input_data)
 
-        shap_df = pd.DataFrame({
-            "Feature": EXPECTED_FEATURES,
-            "Impact": shap_array
-        })
+                shap_array = (
+                    shap_values[1][0]
+                    if isinstance(shap_values, list)
+                    else shap_values[0]
+                )
 
-        shap_df["abs_impact"] = shap_df["Impact"].abs()
-        shap_df = shap_df.sort_values(
-            "abs_impact", ascending=False
-        )
+                shap_df = pd.DataFrame({
+                    "Feature": EXPECTED_FEATURES,
+                    "Impact": shap_array
+                })
 
-        top3 = shap_df.head(3)
+                shap_df["abs_impact"] = shap_df["Impact"].abs()
+                shap_df = shap_df.sort_values("abs_impact", ascending=False)
 
-        fig = px.bar(
-            top3.sort_values("Impact"),
-            x="Impact",
-            y="Feature",
-            orientation="h",
-            title="Top Risk Drivers"
-        )
+                top3 = shap_df.head(3)
 
-        st.plotly_chart(fig, use_container_width=True)
+                fig = px.bar(
+                    top3.sort_values("Impact"),
+                    x="Impact",
+                    y="Feature",
+                    orientation="h",
+                    title="Top Risk Drivers"
+                )
 
+                st.plotly_chart(fig, use_container_width=True)
+
+            except Exception as e:
+                st.warning("SHAP analysis failed. Showing fallback insights.")
+
+        else:
+            st.warning("SHAP not available in deployment. Showing model insights instead.")
+
+            top_features = importance_df.sort_values(
+                "importance", ascending=False
+            ).head(3)
+
+            fig = px.bar(
+                top_features,
+                x="importance",
+                y="feature",
+                orientation="h",
+                title="Top Risk Drivers (Global Importance)"
+            )
+
+            st.plotly_chart(fig, use_container_width=True)
 
     # ==========================================================
     # GLOBAL MODEL INTELLIGENCE
