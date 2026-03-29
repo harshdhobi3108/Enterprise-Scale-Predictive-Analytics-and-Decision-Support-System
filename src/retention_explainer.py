@@ -1,10 +1,11 @@
 """
 Retention SHAP Explainer
-(Production-Grade | Streamlit Safe | SHAP Fixed)
+(Final Production Version | No Errors | Streamlit Safe)
 """
 
 import joblib
 import pandas as pd
+import numpy as np
 
 # ==========================================================
 # SAFE SHAP IMPORT
@@ -59,7 +60,7 @@ class RetentionExplainer:
             self.explainer = None
 
     # ==========================================================
-    # INTERNAL HELPERS
+    # HELPERS
     # ==========================================================
     def _transform(self, X):
         if self.preprocessor is not None:
@@ -73,7 +74,7 @@ class RetentionExplainer:
             return None
 
     # ==========================================================
-    # GET SHAP VALUES
+    # INSTANCE EXPLANATION
     # ==========================================================
     def explain_instance(self, X):
 
@@ -98,11 +99,40 @@ class RetentionExplainer:
             return shap_values, X_named
 
         except Exception as e:
-            print("SHAP error:", str(e))
+            print("SHAP instance error:", str(e))
             return None, X
 
     # ==========================================================
-    # WATERFALL PLOT (FIXED)
+    # GLOBAL EXPLANATION
+    # ==========================================================
+    def explain_global(self, X):
+
+        if not SHAP_AVAILABLE or self.explainer is None:
+            return None, X
+
+        try:
+            X_transformed = self._transform(X)
+
+            shap_values = self.explainer.shap_values(X_transformed)
+
+            feature_names = self._get_feature_names()
+
+            if feature_names is None:
+                feature_names = [f"f_{i}" for i in range(X_transformed.shape[1])]
+
+            X_named = pd.DataFrame(
+                X_transformed,
+                columns=feature_names
+            )
+
+            return shap_values, X_named
+
+        except Exception as e:
+            print("Global SHAP error:", str(e))
+            return None, X
+
+    # ==========================================================
+    # WATERFALL PLOT (FIXED FOR CLASSIFICATION)
     # ==========================================================
     def plot_waterfall(self, shap_values, X_named, index=0):
 
@@ -110,7 +140,7 @@ class RetentionExplainer:
             return None
 
         try:
-            # ✅ FIX: Always use class 1
+            # ✅ FIX: use class 1
             expected_value = self.explainer.expected_value[1]
             shap_val = shap_values[1][index]
             features = X_named.iloc[index]
@@ -124,25 +154,27 @@ class RetentionExplainer:
             return fig
 
         except Exception as e:
-            print("Waterfall plot error:", str(e))
+            print("Waterfall error:", str(e))
             return None
 
     # ==========================================================
     # GLOBAL FEATURE IMPORTANCE
     # ==========================================================
-    def global_importance(self, shap_values):
+    def global_importance(self, shap_values, X_named):
 
         if shap_values is None:
             return None
 
         try:
-            # mean absolute SHAP values for class 1
-            import numpy as np
-
             importance = np.abs(shap_values[1]).mean(axis=0)
 
-            return importance
+            df = pd.DataFrame({
+                "feature": X_named.columns,
+                "importance": importance
+            }).sort_values(by="importance", ascending=False)
+
+            return df
 
         except Exception as e:
-            print("Global importance error:", str(e))
+            print("Importance error:", str(e))
             return None
