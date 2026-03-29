@@ -1,11 +1,20 @@
 """
 Retention SHAP Explainer
-With Proper Feature Names
+(Deployment-Safe Version - SHAP Optional)
 """
 
-import shap
 import joblib
 import pandas as pd
+
+# ==========================================================
+# SAFE SHAP IMPORT
+# ==========================================================
+try:
+    import shap
+    SHAP_AVAILABLE = True
+except ImportError:
+    shap = None
+    SHAP_AVAILABLE = False
 
 
 class RetentionExplainer:
@@ -17,34 +26,63 @@ class RetentionExplainer:
         self.preprocessor = self.pipeline.named_steps["preprocessor"]
         self.model = self.pipeline.named_steps["classifier"]
 
-        self.explainer = shap.TreeExplainer(self.model)
+        # Initialize explainer only if SHAP is available
+        if SHAP_AVAILABLE:
+            try:
+                self.explainer = shap.TreeExplainer(self.model)
+            except Exception:
+                self.explainer = None
+        else:
+            self.explainer = None
 
+    # ==========================================================
+    # LOCAL EXPLANATION
+    # ==========================================================
     def explain_instance(self, X):
 
-        X_transformed = self.preprocessor.transform(X)
+        # If SHAP not available → safe fallback
+        if not SHAP_AVAILABLE or self.explainer is None:
+            return None, X
 
-        shap_values = self.explainer.shap_values(X_transformed)
+        try:
+            X_transformed = self.preprocessor.transform(X)
 
-        feature_names = X.columns.tolist()
+            shap_values = self.explainer.shap_values(X_transformed)
 
-        X_named = pd.DataFrame(
-            X_transformed,
-            columns=feature_names
-        )
+            feature_names = X.columns.tolist()
 
-        return shap_values, X_named
+            X_named = pd.DataFrame(
+                X_transformed,
+                columns=feature_names
+            )
 
+            return shap_values, X_named
+
+        except Exception:
+            return None, X
+
+    # ==========================================================
+    # GLOBAL EXPLANATION
+    # ==========================================================
     def explain_global(self, X):
 
-        X_transformed = self.preprocessor.transform(X)
+        # If SHAP not available → safe fallback
+        if not SHAP_AVAILABLE or self.explainer is None:
+            return None, X
 
-        shap_values = self.explainer.shap_values(X_transformed)
+        try:
+            X_transformed = self.preprocessor.transform(X)
 
-        feature_names = X.columns.tolist()
+            shap_values = self.explainer.shap_values(X_transformed)
 
-        X_named = pd.DataFrame(
-            X_transformed,
-            columns=feature_names
-        )
+            feature_names = X.columns.tolist()
 
-        return shap_values, X_named
+            X_named = pd.DataFrame(
+                X_transformed,
+                columns=feature_names
+            )
+
+            return shap_values, X_named
+
+        except Exception:
+            return None, X
