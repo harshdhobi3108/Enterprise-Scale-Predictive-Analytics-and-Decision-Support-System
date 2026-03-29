@@ -1,3 +1,16 @@
+# Virtual environment
+venv/
+
+# Dev & cache
+.devcontainer/
+__pycache__/
+*.pyc
+
+# Data & logs
+notebooks/
+logs/
+
+# Secrets (VERY IMPORTANT 🔥)
 .env
 google_credentials.json
 .streamlit/secrets.toml
