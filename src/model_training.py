@@ -1,230 +1,82 @@
-import streamlit as st
 import pandas as pd
 import joblib
-import plotly.express as px
-import plotly.graph_objects as go
-import shap
-
-from auth.google_auth import google_login
+import os
+from lightgbm import LGBMClassifier
 
 
-st.set_page_config(
-    page_title="Enterprise Delivery Delay System",
-    layout="wide"
-)
+def load_data():
+    import os
+
+    BASE_DIR = os.path.dirname(os.path.dirname(__file__))
+    data_path = os.path.join(BASE_DIR, "data", "processed", "delivery_features.csv")
+
+    if not os.path.exists(data_path):
+        raise FileNotFoundError(f"Dataset not found at: {data_path}")
+
+    df = pd.read_csv(data_path)
+    return df
 
 
-# --------------------------------------------------
-# Logout Button
-# --------------------------------------------------
-st.sidebar.success("Logged in")
-if st.sidebar.button("Logout"):
-    st.session_state.logged_in = False
-    st.rerun()
+# Feature preparation
+def prepare_features(df):
+    feature_cols = [
+        "purchase_hour",
+        "purchase_dayofweek",
+        "purchase_month",
+        "approval_delay_hours",
+        "carrier_delay_hours",
+        "estimated_delivery_days",
+        "total_payment_value",
+        "payment_installments"
+    ]
+
+    target_col = "is_delayed"  # UPDATE if needed
+
+    X = df[feature_cols]
+    y = df[target_col]
+
+    return X, y, feature_cols
 
 
-# --------------------------------------------------
-# Resource Loading (Cached)
-# --------------------------------------------------
-
-@st.cache_resource
-def load_model():
-    return joblib.load("models/delivery_delay_model.pkl")
-
-
-@st.cache_data
-def load_feature_importance():
-    return pd.read_csv("models/feature_importance.csv")
-
-
-@st.cache_resource
-def load_explainer(_model):
-    return shap.TreeExplainer(_model)
-
-
-model = load_model()
-importance_df = load_feature_importance()
-explainer = load_explainer(model)
-
-
-# --------------------------------------------------
-# Header
-# --------------------------------------------------
-
-st.title("Enterprise Delivery Delay Prediction System")
-st.markdown("Predictive Analytics and Decision Support Dashboard")
-
-st.divider()
-
-
-# --------------------------------------------------
-# Sidebar – Input Parameters
-# --------------------------------------------------
-
-st.sidebar.header("Order Parameters")
-
-purchase_hour = st.sidebar.slider("Purchase Hour", 0, 23, 12)
-purchase_dayofweek = st.sidebar.slider("Purchase Day of Week (0 = Monday)", 0, 6, 2)
-purchase_month = st.sidebar.slider("Purchase Month", 1, 12, 6)
-
-approval_delay_hours = st.sidebar.number_input(
-    "Approval Delay (hours)", 0.0, 200.0, 2.0
-)
-
-carrier_delay_hours = st.sidebar.number_input(
-    "Carrier Delay (hours)", 0.0, 500.0, 12.0
-)
-
-estimated_delivery_days = st.sidebar.number_input(
-    "Estimated Delivery Days", 1.0, 60.0, 7.0
-)
-
-total_payment_value = st.sidebar.number_input(
-    "Total Payment Value", 0.0, 10000.0, 150.0
-)
-
-payment_installments = st.sidebar.slider(
-    "Payment Installments", 1, 24, 1
-)
-
-
-# --------------------------------------------------
-# Input Data Preparation
-# --------------------------------------------------
-
-input_data = pd.DataFrame([{
-    "purchase_hour": purchase_hour,
-    "purchase_dayofweek": purchase_dayofweek,
-    "purchase_month": purchase_month,
-    "approval_delay_hours": approval_delay_hours,
-    "carrier_delay_hours": carrier_delay_hours,
-    "estimated_delivery_days": estimated_delivery_days,
-    "total_payment_value": total_payment_value,
-    "payment_installments": payment_installments,
-}])
-
-
-# --------------------------------------------------
-# Prediction Section
-# --------------------------------------------------
-
-st.subheader("Delay Risk Prediction")
-
-probability = float(model.predict_proba(input_data)[0][1])
-
-col1, col2, col3 = st.columns(3)
-
-col1.metric("Model AUC", "0.77")
-col2.metric("Prediction Confidence", f"{probability:.2%}")
-col3.metric("Model Type", "LightGBM")
-
-with col1:
-    st.metric("Predicted Delay Probability", f"{probability:.2%}")
-
-with col2:
-    if probability >= 0.60:
-        st.error("High Risk")
-    elif probability >= 0.30:
-        st.warning("Medium Risk")
-    else:
-        st.success("Low Risk")
-
-
-# --------------------------------------------------
-# Risk Gauge
-# --------------------------------------------------
-
-st.subheader("Risk Confidence Indicator")
-
-gauge = go.Figure(go.Indicator(
-    mode="gauge+number",
-    value=probability * 100,
-    title={'text': "Delay Risk (%)"},
-    gauge={
-        'axis': {'range': [0, 100]},
-        'bar': {'color': "darkred"},
-        'steps': [
-            {'range': [0, 30], 'color': "#d4edda"},
-            {'range': [30, 60], 'color': "#fff3cd"},
-            {'range': [60, 100], 'color': "#f8d7da"},
-        ],
-    }
-))
-
-st.plotly_chart(gauge, width="stretch")
-
-st.divider()
-
-
-# --------------------------------------------------
-# SHAP Explainability
-# --------------------------------------------------
-
-st.subheader("Explainable AI – Feature Contributions")
-
-try:
-    shap_values = explainer.shap_values(input_data)
-
-    if isinstance(shap_values, list):
-        if len(shap_values) > 1:
-            shap_array = shap_values[1][0]
-        else:
-            shap_array = shap_values[0][0]
-    else:
-        shap_array = shap_values[0]
-
-    shap_df = (
-        pd.DataFrame({
-            "Feature": input_data.columns,
-            "SHAP Value": shap_array
-        })
-        .assign(Absolute_Impact=lambda df: df["SHAP Value"].abs())
-        .sort_values("Absolute_Impact", ascending=False)
-        .drop(columns="Absolute_Impact")
-        .reset_index(drop=True)
+# Train model
+def train_model(X, y):
+    model = LGBMClassifier(
+        n_estimators=200,
+        learning_rate=0.05,
+        max_depth=6,
+        random_state=42
     )
 
-    st.dataframe(shap_df, width="stretch")
-
-except Exception as error:
-    st.error("Explainability module could not be generated.")
-    st.text(str(error))
+    model.fit(X, y)
+    return model
 
 
-st.divider()
+# Save model bundle
+def save_model(model, feature_list):
+    os.makedirs("models", exist_ok=True)
+
+    bundle = {
+        "model": model,
+        "features": feature_list
+    }
+
+    joblib.dump(bundle, "models/model_features.pkl")
+    print("✅ Model saved successfully!")
 
 
-# --------------------------------------------------
-# Global Feature Importance
-# --------------------------------------------------
+# Main execution
+def main():
+    print("🚀 Training started...")
 
-st.subheader("Global Model Feature Importance")
+    df = load_data()
+    X, y, feature_list = prepare_features(df)
 
-importance_chart = px.bar(
-    importance_df,
-    x="importance",
-    y="feature",
-    orientation="h",
-    title="Feature Importance Ranking"
-)
+    model = train_model(X, y)
 
-st.plotly_chart(importance_chart, width="stretch")
+    save_model(model, feature_list)
 
-st.divider()
+    print("🎯 Training completed!")
 
 
-# --------------------------------------------------
-# Model Overview
-# --------------------------------------------------
-
-st.subheader("Model Overview")
-
-st.markdown("""
-Model Type: LightGBM Gradient Boosting  
-Validation Strategy: Time-aware Cross Validation  
-Class Imbalance Handling: scale_pos_weight applied  
-Threshold Optimization: F1-optimized  
-Current AUC: ~0.77  
-
-This system supports proactive logistics risk management and operational decision-making.
-""")
+if __name__ == "__main__":
+    main()
