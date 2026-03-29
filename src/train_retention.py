@@ -1,12 +1,16 @@
 """
 Train Enterprise Retention Model
-Customer Lifecycle Intelligence Engine (Leakage-Free Version)
+Customer Lifecycle Intelligence Engine (Production-Safe Version)
 """
 
 import pandas as pd
-from data_loader import DataLoader
-from retention_features import build_retention_features
-from retention_model import train_retention_model
+import joblib
+import os
+
+# ✅ FIXED IMPORTS (CRITICAL)
+from src.data_loader import DataLoader
+from src.retention_features import build_retention_features
+from src.retention_model import train_retention_model
 
 
 # ==========================================================
@@ -70,7 +74,7 @@ def main():
     )
 
     # ==========================================================
-    # STEP 3: Time-based split (CRITICAL FIX)
+    # STEP 3: Time-based split (NO LEAKAGE)
     # ==========================================================
     cutoff_date = orders["order_purchase_timestamp"].quantile(0.80)
 
@@ -88,7 +92,7 @@ def main():
     print(f"Future Orders: {len(future_orders)}")
 
     # ==========================================================
-    # STEP 4: Build Features ONLY from past
+    # STEP 4: Feature Engineering
     # ==========================================================
     print("\nBuilding features from past data...")
     features = build_retention_features(
@@ -98,7 +102,7 @@ def main():
     )
 
     # ==========================================================
-    # STEP 5: Create Target from future
+    # STEP 5: Target Creation
     # ==========================================================
     print("Creating retention target from future data...")
     retention = create_retention_target_future(future_orders)
@@ -112,11 +116,10 @@ def main():
         how="left"
     )
 
-    # Customers with no future orders = churn (0)
     dataset["retained"] = dataset["retained"].fillna(0)
 
     # ==========================================================
-    # STEP 7: Prepare Training Data
+    # STEP 7: Prepare Data
     # ==========================================================
     X = dataset.drop(columns=["customer_unique_id", "retained"])
     y = dataset["retained"]
@@ -131,6 +134,18 @@ def main():
     model = train_retention_model(X, y)
 
     print("\nRetention model training complete.")
+
+    # ==========================================================
+    # ✅ STEP 9: SAVE MODEL + FEATURES (CRITICAL)
+    # ==========================================================
+    os.makedirs("models", exist_ok=True)
+
+    joblib.dump(model, "models/delivery_delay_model.pkl")
+
+    # Save feature names (VERY IMPORTANT for Streamlit)
+    joblib.dump(list(X.columns), "models/model_features.pkl")
+
+    print("Model saved successfully.")
 
     return model
 

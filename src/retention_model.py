@@ -1,10 +1,11 @@
 """
 Enterprise Retention Model Training
-Handles extreme class imbalance properly
+Production-Safe | XGBoost v2 Compatible | Handles Class Imbalance
 """
 
 import joblib
 import os
+import numpy as np
 from collections import Counter
 
 from sklearn.model_selection import train_test_split
@@ -16,7 +17,9 @@ from sklearn.metrics import (
     classification_report,
     average_precision_score
 )
+
 from xgboost import XGBClassifier
+from xgboost.callback import EarlyStopping
 
 
 def train_retention_model(
@@ -24,8 +27,6 @@ def train_retention_model(
     y,
     model_path="models/retention_model.pkl"
 ):
-
-    import numpy as np
 
     # ==========================================================
     # Train-Test Split
@@ -51,14 +52,14 @@ def train_retention_model(
     # ==========================================================
     numeric_features = X.select_dtypes(
         include=["int64", "float64"]
-    ).columns
+    ).columns.tolist()
 
     preprocessor = ColumnTransformer([
         ("num", StandardScaler(), numeric_features)
     ])
 
     # ==========================================================
-    # XGBoost (with Early Stopping)
+    # XGBoost Model (v2 Compatible)
     # ==========================================================
     model = XGBClassifier(
         n_estimators=1000,
@@ -72,28 +73,29 @@ def train_retention_model(
         n_jobs=-1
     )
 
-    pipeline = Pipeline([
-        ("preprocessor", preprocessor),
-        ("classifier", model)
-    ])
-
     # ==========================================================
-    # Fit with Early Stopping
+    # Transform Data
     # ==========================================================
     X_train_transformed = preprocessor.fit_transform(X_train)
     X_test_transformed = preprocessor.transform(X_test)
 
+    # ==========================================================
+    # TRAIN (VERSION SAFE - NO EARLY STOPPING)
+    # ==========================================================
     model.fit(
         X_train_transformed,
         y_train,
         eval_set=[(X_test_transformed, y_test)],
-        early_stopping_rounds=50,
         verbose=False
     )
 
-    # Reattach trained components
-    pipeline.named_steps["preprocessor"] = preprocessor
-    pipeline.named_steps["classifier"] = model
+    # ==========================================================
+    # Create Pipeline AFTER Training (SAFE SERIALIZATION)
+    # ==========================================================
+    pipeline = Pipeline([
+        ("preprocessor", preprocessor),
+        ("classifier", model)
+    ])
 
     # ==========================================================
     # Evaluation
@@ -108,7 +110,7 @@ def train_retention_model(
     print(f"PR-AUC : {pr_auc:.4f}")
 
     # ==========================================================
-    # Optimal Threshold (IMPORTANT)
+    # Optimal Threshold
     # ==========================================================
     thresholds = np.linspace(0.1, 0.9, 50)
     best_threshold = 0.5
@@ -130,13 +132,14 @@ def train_retention_model(
     print(classification_report(y_test, y_pred))
 
     # ==========================================================
-    # Save Everything (Model + Threshold)
+    # Save Model + Metadata (ENTERPRISE SAFE)
     # ==========================================================
     os.makedirs(os.path.dirname(model_path), exist_ok=True)
 
     joblib.dump({
         "model": pipeline,
-        "threshold": best_threshold
+        "threshold": best_threshold,
+        "features": numeric_features
     }, model_path)
 
     print(f"\nModel saved at: {model_path}")
