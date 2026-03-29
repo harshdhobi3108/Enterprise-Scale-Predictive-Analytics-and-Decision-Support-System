@@ -1,16 +1,17 @@
 """
 Customer Lifecycle Intelligence Dashboard
 Retention Prediction + SHAP Explainability
-(Deployment-Safe Version - SHAP Optional)
+(FINAL FIXED VERSION - STREAMLIT SAFE)
 """
 
 import streamlit as st
 import joblib
 import pandas as pd
 import matplotlib.pyplot as plt
+import numpy as np
 
 # ==========================================================
-# SAFE SHAP IMPORT (CRITICAL FIX)
+# SAFE SHAP IMPORT
 # ==========================================================
 try:
     import shap
@@ -23,12 +24,11 @@ from src.data_loader import DataLoader
 from src.retention_features import build_retention_features
 from src.retention_explainer import RetentionExplainer
 
-
 MODEL_PATH = "models/retention_model.pkl"
 
 
 # ==========================================================
-# Load Retention Features + Customer Info
+# LOAD DATA
 # ==========================================================
 @st.cache_data
 def load_retention_features():
@@ -80,14 +80,14 @@ def load_retention_features():
 
 
 # ==========================================================
-# Dashboard
+# MAIN DASHBOARD
 # ==========================================================
 def run_retention_dashboard():
 
     st.title("Customer Lifecycle Intelligence")
 
     # ---------------------------------------------------------
-    # Load Model
+    # LOAD MODEL
     # ---------------------------------------------------------
     model_bundle = joblib.load(MODEL_PATH)
 
@@ -101,11 +101,10 @@ def run_retention_dashboard():
     explainer = RetentionExplainer(MODEL_PATH)
 
     # ---------------------------------------------------------
-    # Load Data
+    # LOAD DATA
     # ---------------------------------------------------------
     features_df, customer_info = load_retention_features()
 
-    # Merge customer info
     features_df = features_df.merge(
         customer_info[
             ["customer_unique_id", "customer_code", "customer_city", "customer_state"]
@@ -114,7 +113,6 @@ def run_retention_dashboard():
         how="left"
     )
 
-    # Display column
     features_df["customer_display"] = (
         features_df["customer_code"] +
         " | " +
@@ -124,7 +122,7 @@ def run_retention_dashboard():
     )
 
     # ---------------------------------------------------------
-    # Prediction Prep
+    # PREPARE FEATURES
     # ---------------------------------------------------------
     X_all = features_df.drop(columns=[
         "customer_unique_id",
@@ -138,7 +136,7 @@ def run_retention_dashboard():
     features_df["retention_probability"] = probabilities
 
     # ---------------------------------------------------------
-    # Top Customers
+    # TOP CUSTOMERS
     # ---------------------------------------------------------
     st.subheader("Top Likely To Retain Customers")
 
@@ -155,13 +153,14 @@ def run_retention_dashboard():
         ].rename(columns={
             "customer_display": "Customer",
             "retention_probability": "Retention Probability"
-        })
+        }),
+        use_container_width=True
     )
 
     st.markdown("---")
 
     # ---------------------------------------------------------
-    # Customer Selection
+    # CUSTOMER SELECTION
     # ---------------------------------------------------------
     customer_map = dict(
         zip(features_df["customer_display"], features_df["customer_unique_id"])
@@ -175,7 +174,7 @@ def run_retention_dashboard():
     selected_customer = customer_map[selected_display]
 
     # ---------------------------------------------------------
-    # Customer Data
+    # CUSTOMER DATA
     # ---------------------------------------------------------
     customer_data = features_df[
         features_df["customer_unique_id"] == selected_customer
@@ -189,7 +188,7 @@ def run_retention_dashboard():
     ])
 
     # ---------------------------------------------------------
-    # Prediction
+    # PREDICTION
     # ---------------------------------------------------------
     probability = model.predict_proba(customer_data)[0][1]
 
@@ -201,7 +200,7 @@ def run_retention_dashboard():
         st.success("Likely to Retain")
 
     # ==========================================================
-    # SHAP SECTION (SAFE HANDLING)
+    # SHAP - LOCAL EXPLANATION (FIXED)
     # ==========================================================
     st.subheader("Why this prediction?")
 
@@ -209,41 +208,61 @@ def run_retention_dashboard():
         try:
             shap_values, X_named = explainer.explain_instance(customer_data)
 
-            fig_local = plt.figure()
-            shap.plots._waterfall.waterfall_legacy(
-                explainer.explainer.expected_value,
-                shap_values[0],
-                feature_names=X_named.columns
-            )
-            st.pyplot(fig_local)
+            if shap_values is not None:
+
+                expected_value = explainer.explainer.expected_value[1]
+                shap_val = shap_values[1][0]
+                features = X_named.iloc[0]
+
+                fig, ax = plt.subplots()
+
+                shap.plots._waterfall.waterfall_legacy(
+                    expected_value,
+                    shap_val,
+                    features,
+                    show=False
+                )
+
+                st.pyplot(fig)
+
+            else:
+                st.warning("SHAP values not available")
 
         except Exception as e:
             st.warning(f"SHAP error: {e}")
 
     else:
-        st.info("SHAP not installed in deployment environment")
+        st.info("SHAP not installed")
 
     # ==========================================================
-    # GLOBAL SHAP
+    # SHAP - GLOBAL EXPLANATION (FIXED)
     # ==========================================================
     st.subheader("Global Retention Drivers")
 
     if SHAP_AVAILABLE:
         try:
-            sample_data = X_all.sample(min(1000, len(X_all)))
+            sample_data = X_all.sample(min(500, len(X_all)))
+
             shap_values_global, X_global = explainer.explain_global(sample_data)
 
-            fig_global = plt.figure()
-            shap.summary_plot(
-                shap_values_global,
-                X_global,
-                feature_names=X_global.columns,
-                show=False
-            )
-            st.pyplot(fig_global)
+            if shap_values_global is not None:
+
+                fig = plt.figure()
+
+                shap.summary_plot(
+                    shap_values_global[1],  # ✅ FIXED
+                    X_global,
+                    feature_names=X_global.columns,
+                    show=False
+                )
+
+                st.pyplot(fig)
+
+            else:
+                st.warning("Global SHAP not available")
 
         except Exception as e:
             st.warning(f"Global SHAP error: {e}")
 
     else:
-        st.info("Global SHAP not available in deployment")
+        st.info("Global SHAP not available")
