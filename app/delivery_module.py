@@ -1,3 +1,6 @@
+import joblib
+
+
 def run_delivery_dashboard():
 
     import streamlit as st
@@ -22,35 +25,14 @@ def run_delivery_dashboard():
     # ==========================================================
     @st.cache_resource
     def load_assets():
-        model = joblib.load("models/delivery_delay_model.pkl")
+        bundle = joblib.load("models/model_features.pkl")
 
-        # Handle feature names safely
-        if hasattr(model, "feature_name_"):
-            expected_features = list(model.feature_name_)
-        else:
-            expected_features = [
-                "purchase_hour",
-                "purchase_dayofweek",
-                "purchase_month",
-                "approval_delay_hours",
-                "carrier_delay_hours",
-                "estimated_delivery_days",
-                "total_payment_value",
-                "payment_installments",
-            ]
+        model = bundle["model"]
+        features = bundle["features"]
 
-        importance_df = pd.read_csv("models/feature_importance.csv")
+        return model, features
 
-        explainer = None
-        if SHAP_AVAILABLE:
-            try:
-                explainer = shap.TreeExplainer(model)
-            except Exception:
-                explainer = None
-
-        return model, explainer, importance_df, expected_features
-
-    model, explainer, importance_df, EXPECTED_FEATURES = load_assets()
+    model, EXPECTED_FEATURES = load_assets()
 
     # ==========================================================
     # HEADER
