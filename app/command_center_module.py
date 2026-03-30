@@ -7,7 +7,7 @@ import streamlit as st
 import plotly.express as px
 import pandas as pd
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timedelta
 
 
 # ==========================================================
@@ -26,34 +26,37 @@ def load_processed_data():
 def run_command_center():
 
     # ==========================================================
+    # CURRENT TIME (IST FIX)
+    # ==========================================================
+    current_time = datetime.utcnow() + timedelta(hours=5, minutes=30)
+
+    # ==========================================================
     # LOAD DATA
     # ==========================================================
-
     df = load_processed_data()
 
     # ==========================================================
     # HEADER
     # ==========================================================
-
     st.markdown("# Enterprise Command Center")
     st.caption("Unified AI-Driven Business Intelligence Overview")
-    st.markdown(f"Last Updated: {datetime.now().strftime('%d %B %Y, %H:%M')}")
+    st.markdown(f"Last Updated: {current_time.strftime('%d %B %Y, %H:%M')}")
     st.markdown("---")
 
     # ==========================================================
     # 🔥 REAL KPI CALCULATIONS (FROM PROCESSED DATA)
     # ==========================================================
 
-    # 🚚 Delivery Risk (actual delay ratio)
+    # 🚚 Delivery Risk
     delivery_risk = df["is_delayed"].mean() * 100
 
-    # 💰 Revenue Risk (low-value transactions)
+    # 💰 Revenue Risk
     revenue_risk = (
         (df["total_payment_value"] < df["total_payment_value"].median())
         .mean() * 100
     )
 
-    # 🔁 Churn Risk (proxy: single-installment customers)
+    # 🔁 Churn Risk
     churn_risk = (
         (df["payment_installments"] == 1)
         .mean() * 100
@@ -108,12 +111,12 @@ def run_command_center():
     st.markdown("---")
 
     # ==========================================================
-    # ENTERPRISE STABILITY TREND (BASED ON REAL SCORE)
+    # ENTERPRISE STABILITY TREND
     # ==========================================================
 
     st.markdown("## Enterprise Stability Trend")
 
-    dates = pd.date_range(end=datetime.today(), periods=30)
+    dates = pd.date_range(end=current_time, periods=30)
 
     noise = np.random.normal(0, 2, 30)
     health_trend = np.clip(
@@ -143,7 +146,7 @@ def run_command_center():
     st.markdown("---")
 
     # ==========================================================
-    # EXECUTIVE INSIGHTS (DYNAMIC)
+    # EXECUTIVE INSIGHTS
     # ==========================================================
 
     st.markdown("## Executive Insight Summary")
