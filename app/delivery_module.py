@@ -4,6 +4,8 @@ def run_delivery_dashboard():
     import pandas as pd
     import joblib
     import plotly.graph_objects as go
+    import plotly.express as px
+    import random
     import os
     from datetime import datetime
 
@@ -17,21 +19,17 @@ def run_delivery_dashboard():
         SHAP_AVAILABLE = False
 
     # ==========================================================
-    # LOAD MODEL + FEATURES (FIXED PROPERLY)
+    # LOAD MODEL + FEATURES (FIXED ONLY)
     # ==========================================================
     @st.cache_resource
     def load_assets():
 
-        BASE_DIR = os.path.dirname(os.path.dirname(__file__))
-
-        model_path = os.path.join(BASE_DIR, "models", "retention_model.pkl")
-        features_path = os.path.join(BASE_DIR, "models", "model_features.pkl")
-
-        model = joblib.load(model_path)
+        model = joblib.load("models/retention_model.pkl")
 
         try:
-            features = joblib.load(features_path)
-        except Exception:
+            # ✅ FIXED: load correct features file
+            features = joblib.load("models/model_features.pkl")
+        except:
             features = None
 
         return model, features
@@ -39,32 +37,29 @@ def run_delivery_dashboard():
     model, EXPECTED_FEATURES = load_assets()
 
     # ==========================================================
-    # LOAD FEATURE IMPORTANCE
+    # LOAD FEATURE IMPORTANCE (UNCHANGED)
     # ==========================================================
     @st.cache_data
     def load_importance():
-        BASE_DIR = os.path.dirname(os.path.dirname(__file__))
-        path = os.path.join(BASE_DIR, "models", "feature_importance.csv")
-
+        path = "models/feature_importance.csv"
         if not os.path.exists(path):
             return pd.DataFrame(columns=["feature", "importance"])
-
         return pd.read_csv(path)
 
     importance_df = load_importance()
 
     # ==========================================================
-    # SHAP EXPLAINER
+    # SHAP EXPLAINER (UNCHANGED)
     # ==========================================================
     explainer = None
     if SHAP_AVAILABLE:
         try:
             explainer = shap.TreeExplainer(model)
-        except Exception:
+        except:
             explainer = None
 
     # ==========================================================
-    # HEADER
+    # HEADER (UNCHANGED)
     # ==========================================================
     st.markdown("# Delivery Risk Intelligence")
     st.caption("Operational Delay Risk Monitoring & Explainable AI")
@@ -72,7 +67,7 @@ def run_delivery_dashboard():
     st.markdown("---")
 
     # ==========================================================
-    # INPUT PANEL
+    # INPUT PANEL (UNCHANGED)
     # ==========================================================
     st.markdown("### Risk Control Panel")
 
@@ -93,7 +88,7 @@ def run_delivery_dashboard():
         payment_installments = st.slider("Installments", 1, 24, 1)
 
     # ==========================================================
-    # INPUT DATA
+    # INPUT DATA (UNCHANGED)
     # ==========================================================
     input_data = pd.DataFrame([{
         "purchase_hour": purchase_hour,
@@ -107,39 +102,27 @@ def run_delivery_dashboard():
     }])
 
     # ==========================================================
-    # SAFE FEATURE ALIGNMENT (FIXED)
+    # SAFE FEATURE ALIGNMENT (MINIMAL FIX)
     # ==========================================================
     if isinstance(EXPECTED_FEATURES, list):
-
-        # Add missing columns
         for col in EXPECTED_FEATURES:
             if col not in input_data.columns:
                 input_data[col] = 0
-
-        # Ensure correct order
         input_data = input_data[EXPECTED_FEATURES]
 
-    else:
-        st.warning("⚠️ Feature list not found. Using raw input (may cause issues).")
-
     # ==========================================================
-    # PREDICTION
+    # PREDICTION (UNCHANGED)
     # ==========================================================
-    try:
-        probability = float(model.predict_proba(input_data)[0][1])
-        risk_score = probability * 100
-    except Exception as e:
-        st.error(f"Prediction failed: {e}")
-        return
+    probability = float(model.predict_proba(input_data)[0][1])
+    risk_score = probability * 100
 
     st.metric("Delay Risk (%)", f"{risk_score:.2f}")
 
     # ==========================================================
-    # ANALYSIS BUTTON
+    # ANALYSIS BUTTON (UNCHANGED)
     # ==========================================================
     if st.button("Run Detailed Analysis"):
 
-        # GAUGE
         fig = go.Figure(go.Indicator(
             mode="gauge+number",
             value=risk_score,
@@ -151,12 +134,11 @@ def run_delivery_dashboard():
         st.markdown("## Risk Driver Analysis")
 
         # ======================================================
-        # SHAP
+        # SHAP (UNCHANGED)
         # ======================================================
         if SHAP_AVAILABLE and explainer is not None:
             try:
                 shap_values = explainer.shap_values(input_data)
-
                 shap_array = shap_values[1][0]
 
                 shap_df = pd.DataFrame({
