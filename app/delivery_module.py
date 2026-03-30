@@ -7,7 +7,23 @@ def run_delivery_dashboard():
     import plotly.express as px
     import random
     import os
-    from datetime import datetime
+    from datetime import datetime, timedelta
+
+    # ==========================================================
+    # AUTO REFRESH EVERY 5 SECONDS
+    # ==========================================================
+    if "last_refresh" not in st.session_state:
+        st.session_state.last_refresh = datetime.utcnow()
+
+    now = datetime.utcnow()
+    if (now - st.session_state.last_refresh).seconds >= 5:
+        st.session_state.last_refresh = now
+        st.rerun()
+
+    # ==========================================================
+    # CURRENT TIME (IST)
+    # ==========================================================
+    current_time = datetime.utcnow() + timedelta(hours=5, minutes=30)
 
     # ==========================================================
     # SAFE SHAP IMPORT
@@ -27,7 +43,6 @@ def run_delivery_dashboard():
         model = joblib.load("models/retention_model.pkl")
 
         try:
-            # ✅ FIXED: load correct features file
             features = joblib.load("models/model_features.pkl")
         except:
             features = None
@@ -37,7 +52,7 @@ def run_delivery_dashboard():
     model, EXPECTED_FEATURES = load_assets()
 
     # ==========================================================
-    # LOAD FEATURE IMPORTANCE (UNCHANGED)
+    # LOAD FEATURE IMPORTANCE
     # ==========================================================
     @st.cache_data
     def load_importance():
@@ -49,7 +64,7 @@ def run_delivery_dashboard():
     importance_df = load_importance()
 
     # ==========================================================
-    # SHAP EXPLAINER (UNCHANGED)
+    # SHAP EXPLAINER
     # ==========================================================
     explainer = None
     if SHAP_AVAILABLE:
@@ -59,11 +74,11 @@ def run_delivery_dashboard():
             explainer = None
 
     # ==========================================================
-    # HEADER (UNCHANGED)
+    # HEADER (ONLY TIME FIXED)
     # ==========================================================
     st.markdown("# Delivery Risk Intelligence")
     st.caption("Operational Delay Risk Monitoring & Explainable AI")
-    st.markdown(f"Last Updated: {current_time.strftime('%d %B %Y, %H:%M')}")
+    st.markdown(f"Last Updated: {current_time.strftime('%d %B %Y, %H:%M:%S')}")
     st.markdown("---")
 
     # ==========================================================
@@ -102,7 +117,7 @@ def run_delivery_dashboard():
     }])
 
     # ==========================================================
-    # SAFE FEATURE ALIGNMENT (MINIMAL FIX)
+    # SAFE FEATURE ALIGNMENT
     # ==========================================================
     if isinstance(EXPECTED_FEATURES, list):
         for col in EXPECTED_FEATURES:
@@ -111,7 +126,7 @@ def run_delivery_dashboard():
         input_data = input_data[EXPECTED_FEATURES]
 
     # ==========================================================
-    # PREDICTION (UNCHANGED)
+    # PREDICTION
     # ==========================================================
     probability = float(model.predict_proba(input_data)[0][1])
     risk_score = probability * 100
@@ -133,9 +148,6 @@ def run_delivery_dashboard():
 
         st.markdown("## Risk Driver Analysis")
 
-        # ======================================================
-        # SHAP (UNCHANGED)
-        # ======================================================
         if SHAP_AVAILABLE and explainer is not None:
             try:
                 shap_values = explainer.shap_values(input_data)
