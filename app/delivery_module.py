@@ -4,8 +4,6 @@ def run_delivery_dashboard():
     import pandas as pd
     import joblib
     import plotly.graph_objects as go
-    import plotly.express as px
-    import random
     import os
     from datetime import datetime
 
@@ -19,16 +17,21 @@ def run_delivery_dashboard():
         SHAP_AVAILABLE = False
 
     # ==========================================================
-    # LOAD MODEL + FEATURES (FIXED)
+    # LOAD MODEL + FEATURES (FIXED PROPERLY)
     # ==========================================================
     @st.cache_resource
     def load_assets():
 
-        model = joblib.load("models/retention_model.pkl")
+        BASE_DIR = os.path.dirname(os.path.dirname(__file__))
+
+        model_path = os.path.join(BASE_DIR, "models", "retention_model.pkl")
+        features_path = os.path.join(BASE_DIR, "models", "model_features.pkl")
+
+        model = joblib.load(model_path)
 
         try:
-            features = joblib.load("models/retention_model.pkl")
-        except:
+            features = joblib.load(features_path)
+        except Exception:
             features = None
 
         return model, features
@@ -40,9 +43,12 @@ def run_delivery_dashboard():
     # ==========================================================
     @st.cache_data
     def load_importance():
-        path = "models/feature_importance.csv"
+        BASE_DIR = os.path.dirname(os.path.dirname(__file__))
+        path = os.path.join(BASE_DIR, "models", "feature_importance.csv")
+
         if not os.path.exists(path):
             return pd.DataFrame(columns=["feature", "importance"])
+
         return pd.read_csv(path)
 
     importance_df = load_importance()
@@ -54,7 +60,7 @@ def run_delivery_dashboard():
     if SHAP_AVAILABLE:
         try:
             explainer = shap.TreeExplainer(model)
-        except:
+        except Exception:
             explainer = None
 
     # ==========================================================
@@ -100,18 +106,31 @@ def run_delivery_dashboard():
         "payment_installments": payment_installments,
     }])
 
-    # ✅ SAFE FEATURE ALIGNMENT
-    if EXPECTED_FEATURES is not None:
+    # ==========================================================
+    # SAFE FEATURE ALIGNMENT (FIXED)
+    # ==========================================================
+    if isinstance(EXPECTED_FEATURES, list):
+
+        # Add missing columns
         for col in EXPECTED_FEATURES:
             if col not in input_data.columns:
                 input_data[col] = 0
+
+        # Ensure correct order
         input_data = input_data[EXPECTED_FEATURES]
+
+    else:
+        st.warning("⚠️ Feature list not found. Using raw input (may cause issues).")
 
     # ==========================================================
     # PREDICTION
     # ==========================================================
-    probability = float(model.predict_proba(input_data)[0][1])
-    risk_score = probability * 100
+    try:
+        probability = float(model.predict_proba(input_data)[0][1])
+        risk_score = probability * 100
+    except Exception as e:
+        st.error(f"Prediction failed: {e}")
+        return
 
     st.metric("Delay Risk (%)", f"{risk_score:.2f}")
 
@@ -138,7 +157,6 @@ def run_delivery_dashboard():
             try:
                 shap_values = explainer.shap_values(input_data)
 
-                # ✅ FIX MULTI-CLASS
                 shap_array = shap_values[1][0]
 
                 shap_df = pd.DataFrame({
