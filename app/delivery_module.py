@@ -24,10 +24,10 @@ def run_delivery_dashboard():
     @st.cache_resource
     def load_assets():
 
-        model = joblib.load("models/delivery_model.pkl")
+        model = joblib.load("models/retention_model.pkl")
 
         try:
-            features = joblib.load("models/model_features.pkl")
+            features = joblib.load("models/retention_model.pkl")
         except:
             features = None
 
