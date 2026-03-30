@@ -63,7 +63,7 @@ def run_delivery_dashboard():
     # ==========================================================
     st.markdown("# Delivery Risk Intelligence")
     st.caption("Operational Delay Risk Monitoring & Explainable AI")
-    st.markdown(f"Last Updated: {datetime.now().strftime('%d %B %Y, %H:%M')}")
+    st.markdown(f"Last Updated: {current_time.strftime('%d %B %Y, %H:%M')}")
     st.markdown("---")
 
     # ==========================================================
