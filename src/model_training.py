@@ -1,44 +1,45 @@
 import pandas as pd
 import joblib
 import os
+import numpy as np
+
 from lightgbm import LGBMClassifier
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import (
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+    roc_auc_score
+)
+from sklearn.calibration import CalibratedClassifierCV
 
 
-# ==========================================================
-# LOAD DATA
-# ==========================================================
 def load_data():
     BASE_DIR = os.path.dirname(os.path.dirname(__file__))
     data_path = os.path.join(BASE_DIR, "data", "processed", "delivery_features.csv")
 
     if not os.path.exists(data_path):
-        raise FileNotFoundError(f"Dataset not found at: {data_path}")
+        raise FileNotFoundError(f"❌ Dataset not found at: {data_path}")
 
-    df = pd.read_csv(data_path)
-    return df
+    return pd.read_csv(data_path)
 
 
-# ==========================================================
-# FEATURE PREPARATION
-# ==========================================================
 def prepare_features(df):
 
     feature_cols = [
         "purchase_hour",
         "purchase_dayofweek",
         "purchase_month",
-        "approval_delay_hours",
-        "carrier_delay_hours",
-        "estimated_delivery_days",
         "total_payment_value",
         "payment_installments"
     ]
 
-    # ✅ Ensure target exists
-    if "is_delayed" not in df.columns:
-        df["is_delayed"] = (df["carrier_delay_hours"] > 24).astype(int)
+    df["is_delayed"] = (
+        (df["carrier_delay_hours"] > 20) |
+        (df["approval_delay_hours"] > 8) |
+        (df["estimated_delivery_days"] > 9)
+    ).astype(int)
 
     X = df[feature_cols]
     y = df["is_delayed"]
@@ -46,63 +47,72 @@ def prepare_features(df):
     return X, y, feature_cols
 
 
-# ==========================================================
-# TRAIN MODEL
-# ==========================================================
 def train_model(X, y):
 
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42
     )
 
-    model = LGBMClassifier(
-        n_estimators=300,
+    base_model = LGBMClassifier(
+        n_estimators=400,
         learning_rate=0.05,
         max_depth=6,
+        class_weight="balanced",
         random_state=42
     )
 
+    model = CalibratedClassifierCV(base_model, method="sigmoid")
     model.fit(X_train, y_train)
 
-    # ✅ Evaluate (basic)
     preds = model.predict(X_test)
-    acc = accuracy_score(y_test, preds)
+    probs = model.predict_proba(X_test)[:, 1]
 
-    print(f"✅ Model Accuracy: {acc:.4f}")
+    print("\n📊 MODEL PERFORMANCE")
+    print(f"Accuracy:  {accuracy_score(y_test, preds):.4f}")
+    print(f"Precision: {precision_score(y_test, preds):.4f}")
+    print(f"Recall:    {recall_score(y_test, preds):.4f}")
+    print(f"F1 Score:  {f1_score(y_test, preds):.4f}")
+    print(f"ROC AUC:   {roc_auc_score(y_test, probs):.4f}")
 
-    return model
+    thresholds = np.linspace(0.1, 0.9, 50)
+    best_threshold = 0.5
+    best_score = 0
+
+    for t in thresholds:
+        temp_preds = (probs >= t).astype(int)
+        score = f1_score(y_test, temp_preds)
+
+        if score > best_score:
+            best_score = score
+            best_threshold = t
+
+    print(f"\n🔥 Best Threshold: {best_threshold:.2f}")
+
+    return model, best_threshold
 
 
-# ==========================================================
-# SAVE MODEL (FIXED 🔥)
-# ==========================================================
-def save_model(model, feature_list):
+def save_model(model, feature_list, threshold):
 
     os.makedirs("models", exist_ok=True)
 
-    # ✅ Save model separately
     joblib.dump(model, "models/delivery_model.pkl")
-
-    # ✅ Save features separately
     joblib.dump(feature_list, "models/model_features.pkl")
+    joblib.dump(threshold, "models/threshold.pkl")
 
-    print("✅ Model & features saved successfully!")
+    print("\n✅ Model, features & threshold saved successfully!")
 
 
-# ==========================================================
-# MAIN
-# ==========================================================
 def main():
-    print("🚀 Training Delivery Model...")
+    print("🚀 Training Production Delivery Model...")
 
     df = load_data()
     X, y, feature_list = prepare_features(df)
 
-    model = train_model(X, y)
+    model, threshold = train_model(X, y)
 
-    save_model(model, feature_list)
+    save_model(model, feature_list, threshold)
 
-    print("🎯 Training completed successfully!")
+    print("\n🎯 Training completed successfully!")
 
 
 if __name__ == "__main__":
