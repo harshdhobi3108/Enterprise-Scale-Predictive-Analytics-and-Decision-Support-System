@@ -1,145 +1,105 @@
-"""
-Enterprise Command Center
-Fully Dynamic AI-Driven Business Intelligence Overview
-"""
-
-import streamlit as st
-import plotly.express as px
-import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta
-
-
-# ==========================================================
-# LOAD PROCESSED DATA (CACHED)
-# ==========================================================
-
-@st.cache_data
-def load_processed_data():
-    return pd.read_csv("data/processed/delivery_features.csv")
-
-
-# ==========================================================
-# MAIN FUNCTION
-# ==========================================================
-
 def run_command_center():
 
-    # ==========================================================
-    # CURRENT TIME (IST FIX)
-    # ==========================================================
+    import streamlit as st
+    import plotly.express as px
+    import pandas as pd
+    from datetime import datetime, timedelta
+
     current_time = datetime.utcnow() + timedelta(hours=5, minutes=30)
 
     # ==========================================================
     # LOAD DATA
     # ==========================================================
+    @st.cache_data
+    def load_processed_data():
+        return pd.read_csv("data/processed/delivery_features.csv")
+
     df = load_processed_data()
 
     # ==========================================================
     # HEADER
     # ==========================================================
-    st.markdown("# Enterprise Command Center")
-    st.caption("Unified AI-Driven Business Intelligence Overview")
-    st.markdown(f"Last Updated: {current_time.strftime('%d %B %Y, %H:%M')}")
+    st.markdown("## 🧠 Enterprise Command Center")
+    st.caption("AI-Driven Business Intelligence Overview")
+    st.write(f"Last Updated: {current_time.strftime('%d %B %Y | %H:%M')}")
     st.markdown("---")
 
     # ==========================================================
-    # 🔥 REAL KPI CALCULATIONS (FROM PROCESSED DATA)
+    # KPI CALCULATIONS
     # ==========================================================
-
-    # 🚚 Delivery Risk
     delivery_risk = df["is_delayed"].mean() * 100
 
-    # 💰 Revenue Risk
     revenue_risk = (
-        (df["total_payment_value"] < df["total_payment_value"].median())
-        .mean() * 100
+        (df["total_payment_value"] < df["total_payment_value"].median()).mean() * 100
     )
 
-    # 🔁 Churn Risk
     churn_risk = (
-        (df["payment_installments"] == 1)
-        .mean() * 100
+        (df["payment_installments"] == 1).mean() * 100
     )
 
-    # 🧠 Business Health Score
     health_score = 100 - int(
         (delivery_risk + revenue_risk + churn_risk) / 3
     )
 
     # ==========================================================
-    # EXECUTIVE OVERVIEW
+    # KPI CARDS (🔥 UPGRADE)
     # ==========================================================
-
-    st.markdown("## Enterprise Overview")
-
     col1, col2, col3, col4 = st.columns(4)
 
-    col1.metric("Delivery Risk Exposure", f"{delivery_risk:.1f}%")
-    col2.metric("Revenue Risk Exposure", f"{revenue_risk:.1f}%")
-    col3.metric("Churn Risk Exposure", f"{churn_risk:.1f}%")
-    col4.metric("Business Health Score", f"{health_score}/100")
+    def card(title, value):
+        return f"""
+        <div style="
+            background:#111827;
+            padding:18px;
+            border-radius:14px;
+            border:1px solid rgba(255,255,255,0.05);
+        ">
+            <div style="color:#9ca3af;font-size:13px">{title}</div>
+            <div style="font-size:28px;font-weight:600">{value}</div>
+        </div>
+        """
+
+    col1.markdown(card("Delivery Risk", f"{delivery_risk:.1f}%"), unsafe_allow_html=True)
+    col2.markdown(card("Revenue Risk", f"{revenue_risk:.1f}%"), unsafe_allow_html=True)
+    col3.markdown(card("Churn Risk", f"{churn_risk:.1f}%"), unsafe_allow_html=True)
+    col4.markdown(card("Health Score", f"{health_score}/100"), unsafe_allow_html=True)
 
     st.markdown("---")
 
     # ==========================================================
-    # ENTERPRISE RISK DISTRIBUTION
+    # BAR CHART (REPLACES PIE)
     # ==========================================================
-
-    st.markdown("## Enterprise Risk Distribution")
+    st.markdown("### 📊 Risk Distribution")
 
     risk_df = pd.DataFrame({
-        "Risk Area": ["Delivery", "Revenue", "Churn"],
+        "Risk Type": ["Delivery", "Revenue", "Churn"],
         "Risk %": [delivery_risk, revenue_risk, churn_risk]
     })
 
-    fig = px.pie(
+    fig = px.bar(
         risk_df,
-        names="Risk Area",
-        values="Risk %",
-        hole=0.55,
-        color_discrete_sequence=["#4F81BD", "#C0504D", "#9BBB59"]
+        x="Risk Type",
+        y="Risk %",
+        text="Risk %",
     )
 
     fig.update_layout(
-        margin=dict(t=10, b=10, l=10, r=10),
-        legend_title="Risk Domains"
+        yaxis_range=[0, 100],
+        margin=dict(t=10, b=10),
     )
 
     st.plotly_chart(fig, use_container_width=True)
 
-    st.markdown("---")
-
     # ==========================================================
-    # ENTERPRISE STABILITY TREND
+    # REAL TREND (NOT FAKE)
     # ==========================================================
+    st.markdown("### 📈 Delivery Delay Trend")
 
-    st.markdown("## Enterprise Stability Trend")
+    trend = df.groupby(df.index // 50)["is_delayed"].mean() * 100
+    trend_df = trend.reset_index()
+    trend_df.columns = ["Batch", "Delay %"]
 
-    dates = pd.date_range(end=current_time, periods=30)
-
-    noise = np.random.normal(0, 2, 30)
-    health_trend = np.clip(
-        health_score + noise,
-        max(40, health_score - 15),
-        min(95, health_score + 10)
-    )
-
-    trend_df = pd.DataFrame({
-        "Date": dates,
-        "Business Health Score": health_trend
-    })
-
-    fig_trend = px.line(
-        trend_df,
-        x="Date",
-        y="Business Health Score"
-    )
-
-    fig_trend.update_layout(
-        margin=dict(t=10, b=10, l=10, r=10),
-        yaxis_range=[40, 100]
-    )
+    fig_trend = px.line(trend_df, x="Batch", y="Delay %")
 
     st.plotly_chart(fig_trend, use_container_width=True)
 
@@ -148,27 +108,43 @@ def run_command_center():
     # ==========================================================
     # EXECUTIVE INSIGHTS
     # ==========================================================
+    st.markdown("### 🧠 Executive Insights")
 
-    st.markdown("## Executive Insight Summary")
+    insights = []
 
     if delivery_risk > 40:
-        st.warning(
-            "Delivery risk is elevated. Operational logistics optimization recommended."
-        )
+        insights.append("Delivery operations are under stress")
 
     if revenue_risk > 40:
-        st.warning(
-            "Revenue volatility detected. Monitor high-value customer segments."
-        )
+        insights.append("Revenue inconsistency detected")
 
     if churn_risk > 40:
-        st.warning(
-            "Customer churn exposure rising. Initiate retention campaigns."
-        )
+        insights.append("Customer churn risk is elevated")
 
-    if health_score >= 75:
-        st.success("Enterprise performance is stable with strong operational resilience.")
-    elif health_score >= 60:
-        st.info("Enterprise performance is moderate. Strategic monitoring advised.")
+    if not insights:
+        insights.append("System operating within normal parameters")
+
+    for i in insights:
+        st.warning(f"- {i}")
+
+    # ==========================================================
+    # ACTIONS (🔥 THIS IS WHAT MAKES IT ELITE)
+    # ==========================================================
+    st.markdown("### 🚀 Recommended Actions")
+
+    if health_score < 60:
+        st.error("""
+        - Immediate operational review required  
+        - Optimize logistics pipeline  
+        - Focus on high-risk customers  
+        """)
+    elif health_score < 75:
+        st.info("""
+        - Monitor risk segments closely  
+        - Improve delivery efficiency  
+        """)
     else:
-        st.error("Enterprise stability is under pressure. Immediate executive review recommended.")
+        st.success("""
+        - System performing optimally  
+        - Maintain current strategy  
+        """)

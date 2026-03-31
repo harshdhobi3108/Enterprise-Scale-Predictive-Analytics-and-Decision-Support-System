@@ -3,7 +3,6 @@ def run_delivery_dashboard():
     import streamlit as st
     import pandas as pd
     import joblib
-    import plotly.graph_objects as go
     from datetime import datetime, timedelta
 
     # ==========================================================
@@ -18,21 +17,45 @@ def run_delivery_dashboard():
     FEATURES = joblib.load("models/model_features.pkl")
     auto_threshold = joblib.load("models/threshold.pkl")
 
-    # 🔥 FINAL SAFE THRESHOLD
     threshold = max(0.3, auto_threshold)
+
+    # ==========================================================
+    # STYLING (ENTERPRISE UI)
+    # ==========================================================
+    st.markdown("""
+    <style>
+    .card {
+        background: #111827;
+        padding: 20px;
+        border-radius: 16px;
+        box-shadow: 0 6px 25px rgba(0,0,0,0.3);
+    }
+    .title {
+        font-size: 14px;
+        color: #9ca3af;
+    }
+    .value {
+        font-size: 32px;
+        font-weight: bold;
+    }
+    .high { color: #ef4444; }
+    .medium { color: #f59e0b; }
+    .low { color: #22c55e; }
+    </style>
+    """, unsafe_allow_html=True)
 
     # ==========================================================
     # HEADER
     # ==========================================================
-    st.markdown("# 🚚 Delivery Risk Intelligence")
-    st.caption("Enterprise AI-powered delay prediction")
-    st.markdown(f"Last Updated: {current_time.strftime('%d %B %Y, %H:%M:%S')}")
+    st.markdown("## 🚚 Delivery Risk Intelligence")
+    st.caption("AI-powered delay prediction")
+    st.write(f"Last Updated: {current_time.strftime('%d %B %Y, %H:%M:%S')}")
     st.markdown("---")
 
     # ==========================================================
-    # INPUT PANEL
+    # INPUT PANEL (CLEAN CARD)
     # ==========================================================
-    st.markdown("### ⚙️ Risk Control Panel")
+    st.markdown("### ⚙️ Risk Configuration")
 
     col1, col2 = st.columns(2)
 
@@ -63,61 +86,97 @@ def run_delivery_dashboard():
     # ==========================================================
     probability = float(model.predict_proba(input_data)[0][1])
     risk_score = probability * 100
-
     prediction = 1 if probability >= threshold else 0
-
-    # ==========================================================
-    # CONFIDENCE
-    # ==========================================================
     confidence = abs(probability - 0.5) * 2 * 100
 
     # ==========================================================
     # RISK LABEL
     # ==========================================================
     if probability < 0.3:
-        risk_label = "🟢 LOW RISK"
+        risk_label = "LOW"
+        risk_class = "low"
     elif probability < 0.7:
-        risk_label = "🟡 MEDIUM RISK"
+        risk_label = "MEDIUM"
+        risk_class = "medium"
     else:
-        risk_label = "🔴 HIGH RISK"
+        risk_label = "HIGH"
+        risk_class = "high"
 
     # ==========================================================
-    # DISPLAY
+    # KPI CARDS (🔥 BIG UPGRADE)
     # ==========================================================
     colA, colB, colC = st.columns(3)
 
     with colA:
-        st.metric("Delay Risk (%)", f"{risk_score:.2f}")
+        st.markdown(f"""
+        <div class="card">
+            <div class="title">Delay Risk</div>
+            <div class="value">{risk_score:.2f}%</div>
+        </div>
+        """, unsafe_allow_html=True)
 
     with colB:
-        st.metric("Risk Level", risk_label)
+        st.markdown(f"""
+        <div class="card">
+            <div class="title">Risk Level</div>
+            <div class="value {risk_class}">{risk_label}</div>
+        </div>
+        """, unsafe_allow_html=True)
 
     with colC:
-        st.metric("Confidence (%)", f"{confidence:.2f}")
+        st.markdown(f"""
+        <div class="card">
+            <div class="title">Confidence</div>
+            <div class="value">{confidence:.2f}%</div>
+        </div>
+        """, unsafe_allow_html=True)
 
     # ==========================================================
-    # GAUGE
+    # PROGRESS BAR (REPLACES GAUGE)
     # ==========================================================
-    fig = go.Figure(go.Indicator(
-        mode="gauge+number",
-        value=risk_score,
-        title={'text': "Delivery Delay Risk (%)"},
-        gauge={
-            'axis': {'range': [0, 100]},
-            'bar': {
-                'color': "red" if probability > 0.7 else "orange" if probability > 0.3 else "green"
-            }
-        }
-    ))
-
-    st.plotly_chart(fig, use_container_width=True)
+    st.markdown("### 📊 Delivery Risk Score")
+    st.progress(min(max(probability, 0.0), 1.0))
+    st.write(f"**{risk_score:.2f}% Risk Probability**")
 
     # ==========================================================
-    # INSIGHT
+    # SMART INSIGHTS (🔥 THIS MAKES IT ENTERPRISE)
     # ==========================================================
-    st.markdown("---")
+    st.markdown("### 📊 Risk Insights")
+
+    insights = []
+
+    if purchase_hour in [18, 19, 20, 21]:
+        insights.append("Peak hour traffic may cause delays")
+
+    if payment_installments <= 2:
+        insights.append("Low installment orders show higher risk pattern")
+
+    if total_payment_value > 500:
+        insights.append("High transaction value increases processing risk")
+
+    if purchase_dayofweek in [5, 6]:
+        insights.append("Weekend deliveries have higher delay probability")
+
+    if not insights:
+        insights.append("No strong risk indicators detected")
+
+    for i in insights:
+        st.warning(f"- {i}")
+
+    # ==========================================================
+    # ACTIONABLE RECOMMENDATIONS
+    # ==========================================================
+    st.markdown("### 🚀 Recommended Actions")
 
     if prediction == 1:
-        st.error("⚠️ High probability of delivery delay detected.")
+        st.error("""
+        - Prioritize this order for dispatch  
+        - Enable real-time tracking  
+        - Consider alternative delivery routes  
+        - Flag for manual review  
+        """)
     else:
-        st.success("✅ Delivery is likely to be on time.")
+        st.success("""
+        - Proceed with standard delivery  
+        - No intervention required  
+        """)
