@@ -4,24 +4,11 @@ def run_delivery_dashboard():
     import pandas as pd
     import joblib
     import plotly.graph_objects as go
-    import plotly.express as px
-    import random
     import os
     from datetime import datetime, timedelta
 
     # ==========================================================
-    # AUTO REFRESH EVERY 5 SECONDS
-    # ==========================================================
-    if "last_refresh" not in st.session_state:
-        st.session_state.last_refresh = datetime.utcnow()
-
-    now = datetime.utcnow()
-    if (now - st.session_state.last_refresh).seconds >= 5:
-        st.session_state.last_refresh = now
-        st.rerun()
-
-    # ==========================================================
-    # CURRENT TIME (IST)
+    # TIME (IST)
     # ==========================================================
     current_time = datetime.utcnow() + timedelta(hours=5, minutes=30)
 
@@ -35,12 +22,17 @@ def run_delivery_dashboard():
         SHAP_AVAILABLE = False
 
     # ==========================================================
-    # LOAD MODEL + FEATURES (FIXED ONLY)
+    # LOAD MODEL (FIXED)
     # ==========================================================
     @st.cache_resource
     def load_assets():
+        model_path = "models/delivery_model.pkl"   # ✅ FIXED
 
-        model = joblib.load("models/retention_model.pkl")
+        if not os.path.exists(model_path):
+            st.error("❌ Delivery model not found. Please train first.")
+            st.stop()
+
+        model = joblib.load(model_path)
 
         try:
             features = joblib.load("models/model_features.pkl")
@@ -52,39 +44,17 @@ def run_delivery_dashboard():
     model, EXPECTED_FEATURES = load_assets()
 
     # ==========================================================
-    # LOAD FEATURE IMPORTANCE
+    # HEADER
     # ==========================================================
-    @st.cache_data
-    def load_importance():
-        path = "models/feature_importance.csv"
-        if not os.path.exists(path):
-            return pd.DataFrame(columns=["feature", "importance"])
-        return pd.read_csv(path)
-
-    importance_df = load_importance()
-
-    # ==========================================================
-    # SHAP EXPLAINER
-    # ==========================================================
-    explainer = None
-    if SHAP_AVAILABLE:
-        try:
-            explainer = shap.TreeExplainer(model)
-        except:
-            explainer = None
-
-    # ==========================================================
-    # HEADER (ONLY TIME FIXED)
-    # ==========================================================
-    st.markdown("# Delivery Risk Intelligence")
-    st.caption("Operational Delay Risk Monitoring & Explainable AI")
+    st.markdown("# 🚚 Delivery Risk Intelligence")
+    st.caption("AI-powered delay risk prediction with explainability")
     st.markdown(f"Last Updated: {current_time.strftime('%d %B %Y, %H:%M:%S')}")
     st.markdown("---")
 
     # ==========================================================
-    # INPUT PANEL (UNCHANGED)
+    # INPUT PANEL
     # ==========================================================
-    st.markdown("### Risk Control Panel")
+    st.markdown("### ⚙️ Risk Control Panel")
 
     col1, col2, col3 = st.columns(3)
 
@@ -103,7 +73,7 @@ def run_delivery_dashboard():
         payment_installments = st.slider("Installments", 1, 24, 1)
 
     # ==========================================================
-    # INPUT DATA (UNCHANGED)
+    # INPUT DATA
     # ==========================================================
     input_data = pd.DataFrame([{
         "purchase_hour": purchase_hour,
@@ -117,7 +87,7 @@ def run_delivery_dashboard():
     }])
 
     # ==========================================================
-    # SAFE FEATURE ALIGNMENT
+    # FEATURE ALIGNMENT
     # ==========================================================
     if isinstance(EXPECTED_FEATURES, list):
         for col in EXPECTED_FEATURES:
@@ -131,31 +101,56 @@ def run_delivery_dashboard():
     probability = float(model.predict_proba(input_data)[0][1])
     risk_score = probability * 100
 
-    st.metric("Delay Risk (%)", f"{risk_score:.2f}")
+    # ==========================================================
+    # RISK LABEL (NEW 🔥)
+    # ==========================================================
+    if risk_score < 30:
+        risk_label = "🟢 LOW RISK"
+    elif risk_score < 70:
+        risk_label = "🟡 MEDIUM RISK"
+    else:
+        risk_label = "🔴 HIGH RISK"
 
     # ==========================================================
-    # ANALYSIS BUTTON (UNCHANGED)
+    # DISPLAY METRICS
     # ==========================================================
-    if st.button("Run Detailed Analysis"):
+    colA, colB = st.columns(2)
 
+    with colA:
+        st.metric("Delay Risk (%)", f"{risk_score:.2f}")
+
+    with colB:
+        st.metric("Risk Level", risk_label)
+
+    # ==========================================================
+    # ANALYSIS BUTTON
+    # ==========================================================
+    if st.button("🔍 Run Detailed Analysis"):
+
+        # ------------------ Gauge ------------------
         fig = go.Figure(go.Indicator(
             mode="gauge+number",
             value=risk_score,
             title={'text': "Delivery Delay Risk (%)"},
-            gauge={'axis': {'range': [0, 100]}}
+            gauge={
+                'axis': {'range': [0, 100]},
+                'bar': {'color': "red" if risk_score > 70 else "orange" if risk_score > 30 else "green"}
+            }
         ))
+
         st.plotly_chart(fig, use_container_width=True)
 
-        st.markdown("## Risk Driver Analysis")
+        # ------------------ SHAP ------------------
+        st.markdown("## 🧠 Risk Driver Analysis")
 
-        if SHAP_AVAILABLE and explainer is not None:
+        if SHAP_AVAILABLE:
             try:
-                shap_values = explainer.shap_values(input_data)
-                shap_array = shap_values[1][0]
+                explainer = shap.Explainer(model)
+                shap_values = explainer(input_data)
 
                 shap_df = pd.DataFrame({
                     "Feature": input_data.columns,
-                    "Impact": shap_array
+                    "Impact": shap_values.values[0]
                 }).sort_values("Impact", key=abs, ascending=False)
 
                 st.dataframe(shap_df.head(5))
@@ -164,8 +159,16 @@ def run_delivery_dashboard():
                 st.warning(f"SHAP failed: {e}")
 
         else:
-            st.warning("Using global importance")
+            st.warning("SHAP not installed")
 
-            st.dataframe(
-                importance_df.sort_values("importance", ascending=False).head(5)
-            )
+    # ==========================================================
+    # INSIGHT BOX (NEW 🔥)
+    # ==========================================================
+    st.markdown("---")
+
+    if risk_score > 70:
+        st.error("⚠️ High delay risk. Immediate action recommended.")
+    elif risk_score > 30:
+        st.warning("⚠️ Moderate risk. Monitor closely.")
+    else:
+        st.success("✅ Delivery is expected on time.")
