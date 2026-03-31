@@ -3,22 +3,24 @@ def run_retention_dashboard():
     import streamlit as st
     import joblib
     import pandas as pd
+    import os
+    import random
 
     from src.data_loader import DataLoader
     from src.retention_features import build_retention_features
-    from src.retention_explainer import RetentionExplainer
-
-    MODEL_PATH = "models/retention_model.pkl"
 
     # ==========================================================
-    # LOAD MODEL
+    # MODEL PATH (SAFE)
     # ==========================================================
-    model_bundle = joblib.load(MODEL_PATH)
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    MODEL_PATH = os.path.join(BASE_DIR, "..", "models", "retention_model.pkl")
 
-    model = model_bundle["model"] if isinstance(model_bundle, dict) else model_bundle
-    threshold = model_bundle.get("threshold", 0.5) if isinstance(model_bundle, dict) else 0.5
-
-    explainer = RetentionExplainer(MODEL_PATH)
+    # ==========================================================
+    # HEADER
+    # ==========================================================
+    st.markdown("## 🔁 Customer Retention Intelligence")
+    st.caption("Predict churn and understand customer behavior")
+    st.markdown("---")
 
     # ==========================================================
     # LOAD DATA
@@ -39,18 +41,51 @@ def run_retention_dashboard():
     df = load_data()
 
     # ==========================================================
-    # HEADER
-    # ==========================================================
-    st.markdown("## 🔁 Customer Retention Intelligence")
-    st.caption("Predict churn and understand drivers")
-    st.markdown("---")
-
-    # ==========================================================
     # SELECT CUSTOMER
     # ==========================================================
     selected_index = st.selectbox("Select Customer Index", df.index)
-
     customer = df.iloc[[selected_index]]
+
+    # ==========================================================
+    # CHECK MODEL
+    # ==========================================================
+    if not os.path.exists(MODEL_PATH):
+
+        # 🚀 DEMO MODE (NO CRASH)
+        st.warning("⚠️ Retention model not found — running in demo mode")
+
+        prob = random.uniform(0.3, 0.9)
+
+        col1, col2 = st.columns(2)
+
+        col1.metric("Retention Probability", f"{prob*100:.2f}%")
+        col2.metric("Status", "Retained" if prob > 0.5 else "Churn Risk")
+
+        st.progress(prob)
+
+        st.markdown("### 📊 Insights")
+        if prob < 0.4:
+            st.warning("- Customer shows high churn tendency")
+        elif prob > 0.7:
+            st.success("- Customer is highly loyal")
+        else:
+            st.info("- Moderate retention probability")
+
+        st.info("ℹ️ This is simulated output because model is missing")
+
+        return  # ⛔ STOP HERE (no crash)
+
+    # ==========================================================
+    # LOAD MODEL (REAL MODE)
+    # ==========================================================
+    model_bundle = joblib.load(MODEL_PATH)
+
+    if isinstance(model_bundle, dict):
+        model = model_bundle["model"]
+        threshold = model_bundle.get("threshold", 0.5)
+    else:
+        model = model_bundle
+        threshold = 0.5
 
     # ==========================================================
     # PREDICTION
@@ -87,13 +122,18 @@ def run_retention_dashboard():
         st.warning(f"- {i}")
 
     # ==========================================================
-    # SHAP
+    # OPTIONAL EXPLAINABILITY (SAFE)
     # ==========================================================
     st.markdown("### 🧠 Model Explainability")
 
     try:
+        from src.retention_explainer import RetentionExplainer
+
+        explainer = RetentionExplainer(MODEL_PATH)
         shap_values, X = explainer.explain_instance(customer)
-        st.write("Top influencing features shown below")
+
+        st.write("Top influencing features:")
         st.dataframe(X.head())
-    except:
+
+    except Exception as e:
         st.info("Explainability not available")
