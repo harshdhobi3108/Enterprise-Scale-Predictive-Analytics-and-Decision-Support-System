@@ -1,55 +1,3 @@
-import streamlit as st
-
-@st.cache_data
-def load_retention_features():
-
-    from src.data_loader import DataLoader
-    from src.retention_features import build_retention_features
-
-    loader = DataLoader("data/raw")
-    data = loader.load_all()
-
-    orders = data["orders"]
-    customers = data["customers"]
-    payments = data["payments"]
-    reviews = data["reviews"]
-
-    # Merge IDs
-    orders = orders.merge(
-        customers[["customer_id", "customer_unique_id"]],
-        on="customer_id",
-        how="left"
-    )
-
-    payments = payments.merge(
-        orders[["order_id", "customer_unique_id"]],
-        on="order_id",
-        how="left"
-    )
-
-    reviews = reviews.merge(
-        orders[["order_id", "customer_unique_id"]],
-        on="order_id",
-        how="left"
-    )
-
-    # Feature engineering
-    features = build_retention_features(orders, payments, reviews)
-
-    # Customer info
-    customer_info = (
-        customers
-        .sort_values("customer_unique_id")
-        .drop_duplicates("customer_unique_id")
-        .reset_index(drop=True)
-    )
-
-    customer_info["customer_code"] = (
-        "CUST-" + (customer_info.index + 1).astype(str).str.zfill(5)
-    )
-
-    return features, customer_info
-
 def run_retention_dashboard():
 
     import os
@@ -64,15 +12,25 @@ def run_retention_dashboard():
     BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
     MODEL_PATH = os.path.join(BASE_DIR, "models", "delivery_model.pkl")
+    FEATURES_PATH = os.path.join(BASE_DIR, "models", "model_features.pkl")
     THRESHOLD_PATH = os.path.join(BASE_DIR, "models", "threshold.pkl")
 
     # ==========================================================
-    # LOAD MODEL (PIPELINE)
+    # LOAD MODEL
     # ==========================================================
     try:
         model = joblib.load(MODEL_PATH)
     except Exception as e:
         st.error(f"Model load failed: {e}")
+        st.stop()
+
+    # ==========================================================
+    # LOAD FEATURE LIST (CRITICAL)
+    # ==========================================================
+    try:
+        model_features = joblib.load(FEATURES_PATH)
+    except Exception as e:
+        st.error(f"model_features.pkl missing: {e}")
         st.stop()
 
     # ==========================================================
@@ -105,7 +63,7 @@ def run_retention_dashboard():
     )
 
     # ==========================================================
-    # 🔥 PREPARE INPUT (NO FEATURE ALIGNMENT)
+    # 🔥 PREPARE INPUT (STRICT FEATURE MATCH)
     # ==========================================================
     X_all = features_df.drop(columns=[
         "customer_unique_id",
@@ -115,8 +73,16 @@ def run_retention_dashboard():
         "customer_display"
     ], errors="ignore")
 
+    # Add missing columns
+    for col in model_features:
+        if col not in X_all.columns:
+            X_all[col] = 0
+
+    # Keep exact order
+    X_all = X_all[model_features]
+
     # ==========================================================
-    # PREDICTIONS (PIPELINE HANDLES EVERYTHING)
+    # PREDICTIONS
     # ==========================================================
     try:
         probabilities = model.predict_proba(X_all)[:, 1]
@@ -165,7 +131,7 @@ def run_retention_dashboard():
     selected_customer = customer_map[selected_display]
 
     # ==========================================================
-    # CUSTOMER DATA (RAW → PIPELINE WILL HANDLE)
+    # CUSTOMER DATA
     # ==========================================================
     customer_data = features_df[
         features_df["customer_unique_id"] == selected_customer
@@ -177,6 +143,13 @@ def run_retention_dashboard():
         "customer_display",
         "retention_probability"
     ], errors="ignore")
+
+    # Add missing columns
+    for col in model_features:
+        if col not in customer_data.columns:
+            customer_data[col] = 0
+
+    customer_data = customer_data[model_features]
 
     # ==========================================================
     # SINGLE PREDICTION
