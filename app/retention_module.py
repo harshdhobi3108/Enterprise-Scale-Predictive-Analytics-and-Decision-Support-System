@@ -9,6 +9,7 @@ import joblib
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
+import os
 
 # ==========================================================
 # SAFE SHAP IMPORT
@@ -24,7 +25,11 @@ from src.data_loader import DataLoader
 from src.retention_features import build_retention_features
 from src.retention_explainer import RetentionExplainer
 
-MODEL_PATH = "models/retention_model.pkl"
+# ==========================================================
+# 🔥 FIXED MODEL PATH (IMPORTANT)
+# ==========================================================
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MODEL_PATH = os.path.join(BASE_DIR, "models", "delivery_model.pkl")
 
 
 # ==========================================================
@@ -41,7 +46,6 @@ def load_retention_features():
     payments = data["payments"]
     reviews = data["reviews"]
 
-    # Attach customer_unique_id
     orders = orders.merge(
         customers[["customer_id", "customer_unique_id"]],
         on="customer_id",
@@ -60,10 +64,8 @@ def load_retention_features():
         how="left"
     )
 
-    # Build features
     features = build_retention_features(orders, payments, reviews)
 
-    # Clean customer table
     customer_info = (
         customers
         .sort_values("customer_unique_id")
@@ -71,7 +73,6 @@ def load_retention_features():
         .reset_index(drop=True)
     )
 
-    # Business-friendly ID
     customer_info["customer_code"] = (
         "CUST-" + (customer_info.index + 1).astype(str).str.zfill(5)
     )
@@ -87,9 +88,23 @@ def run_retention_dashboard():
     st.title("Customer Lifecycle Intelligence")
 
     # ---------------------------------------------------------
+    # 🔥 DEBUG INFO (REMOVE LATER)
+    # ---------------------------------------------------------
+    st.write("Current working directory:", os.getcwd())
+    st.write("Model path:", MODEL_PATH)
+
+    if not os.path.exists(MODEL_PATH):
+        st.error(f"❌ Model file NOT FOUND at: {MODEL_PATH}")
+        st.stop()
+
+    # ---------------------------------------------------------
     # LOAD MODEL
     # ---------------------------------------------------------
-    model_bundle = joblib.load(MODEL_PATH)
+    try:
+        model_bundle = joblib.load(MODEL_PATH)
+    except Exception as e:
+        st.error(f"❌ Error loading model: {e}")
+        st.stop()
 
     if isinstance(model_bundle, dict):
         model = model_bundle["model"]
@@ -200,7 +215,7 @@ def run_retention_dashboard():
         st.success("Likely to Retain")
 
     # ==========================================================
-    # SHAP - LOCAL EXPLANATION (FIXED)
+    # SHAP
     # ==========================================================
     st.subheader("Why this prediction?")
 
@@ -233,36 +248,3 @@ def run_retention_dashboard():
 
     else:
         st.info("SHAP not installed")
-
-    # ==========================================================
-    # SHAP - GLOBAL EXPLANATION (FIXED)
-    # ==========================================================
-    st.subheader("Global Retention Drivers")
-
-    if SHAP_AVAILABLE:
-        try:
-            sample_data = X_all.sample(min(500, len(X_all)))
-
-            shap_values_global, X_global = explainer.explain_global(sample_data)
-
-            if shap_values_global is not None:
-
-                fig = plt.figure()
-
-                shap.summary_plot(
-                    shap_values_global[1],  # ✅ FIXED
-                    X_global,
-                    feature_names=X_global.columns,
-                    show=False
-                )
-
-                st.pyplot(fig)
-
-            else:
-                st.warning("Global SHAP not available")
-
-        except Exception as e:
-            st.warning(f"Global SHAP error: {e}")
-
-    else:
-        st.info("Global SHAP not available")
