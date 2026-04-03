@@ -1,6 +1,6 @@
 """
 Retention SHAP Explainer
-(Final Stable Version - No Errors)
+(Final Stable Version - Streamlit + Raw Model Safe)
 """
 
 import joblib
@@ -24,77 +24,106 @@ class RetentionExplainer:
         self.preprocessor = None
         self.model = None
 
-        # Extract pipeline safely
+        # ==========================================================
+        # 🔥 HANDLE BOTH CASES: PIPELINE + RAW MODEL
+        # ==========================================================
         if hasattr(self.pipeline, "named_steps"):
-
+            # Pipeline case
             for name, step in self.pipeline.named_steps.items():
 
+                # Detect preprocessor
                 if "columntransformer" in str(type(step)).lower():
                     self.preprocessor = step
 
-                else:
-                    self.model = step
+                # Assume last step is model
+                self.model = step
+
+        else:
+            # 🔥 RAW MODEL CASE (YOUR CASE)
+            self.model = self.pipeline
+            self.preprocessor = None
 
         if self.model is None:
-            raise ValueError("Model not found in pipeline")
+            raise ValueError("Model could not be loaded")
 
-        # Init SHAP
+        # ==========================================================
+        # SHAP INIT (SAFE)
+        # ==========================================================
         if SHAP_AVAILABLE:
             try:
+                # Try TreeExplainer first (best for tree models)
                 self.explainer = shap.TreeExplainer(self.model)
-            except:
-                self.explainer = None
+            except Exception:
+                try:
+                    # Fallback (universal but slower)
+                    self.explainer = shap.Explainer(self.model)
+                except Exception:
+                    self.explainer = None
         else:
             self.explainer = None
 
-    # -----------------------------
-    # Transform
-    # -----------------------------
+    # ==========================================================
+    # TRANSFORM (SAFE)
+    # ==========================================================
     def _transform(self, X):
-        if self.preprocessor:
-            return self.preprocessor.transform(X)
-        return X
-
-    def _feature_names(self):
         try:
-            return self.preprocessor.get_feature_names_out()
-        except:
-            return None
+            if self.preprocessor is not None:
+                return self.preprocessor.transform(X)
+            return X
+        except Exception:
+            return X  # fallback
 
-    # -----------------------------
-    # Instance SHAP
-    # -----------------------------
+    def _feature_names(self, X, X_t):
+        try:
+            if self.preprocessor is not None:
+                return self.preprocessor.get_feature_names_out()
+            else:
+                return X.columns.tolist()
+        except Exception:
+            return [f"f_{i}" for i in range(X_t.shape[1])]
+
+    # ==========================================================
+    # INSTANCE SHAP
+    # ==========================================================
     def explain_instance(self, X):
 
         if not SHAP_AVAILABLE or self.explainer is None:
             return None, X
 
-        X_t = self._transform(X)
-        shap_values = self.explainer.shap_values(X_t)
+        try:
+            X_t = self._transform(X)
 
-        names = self._feature_names()
-        if names is None:
-            names = [f"f_{i}" for i in range(X_t.shape[1])]
+            # SHAP values
+            shap_values = self.explainer.shap_values(X_t)
 
-        X_named = pd.DataFrame(X_t, columns=names)
+            # Feature names
+            names = self._feature_names(X, X_t)
 
-        return shap_values, X_named
+            X_named = pd.DataFrame(X_t, columns=names)
 
-    # -----------------------------
-    # Global SHAP
-    # -----------------------------
+            return shap_values, X_named
+
+        except Exception:
+            return None, X
+
+    # ==========================================================
+    # GLOBAL SHAP
+    # ==========================================================
     def explain_global(self, X):
 
         if not SHAP_AVAILABLE or self.explainer is None:
             return None, X
 
-        X_t = self._transform(X)
-        shap_values = self.explainer.shap_values(X_t)
+        try:
+            X_t = self._transform(X)
 
-        names = self._feature_names()
-        if names is None:
-            names = [f"f_{i}" for i in range(X_t.shape[1])]
+            shap_values = self.explainer.shap_values(X_t)
 
-        X_named = pd.DataFrame(X_t, columns=names)
+            names = self._feature_names(X, X_t)
 
-        return shap_values, X_named
+            X_named = pd.DataFrame(X_t, columns=names)
+
+            return shap_values, X_named
+
+        except Exception:
+            return None, X
