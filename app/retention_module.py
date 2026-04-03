@@ -1,83 +1,94 @@
+"""
+Customer Lifecycle Intelligence Dashboard
+Retention Prediction + SHAP Explainability
+(FINAL FIXED VERSION - STREAMLIT SAFE)
+"""
+
+import streamlit as st
+import joblib
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+
+# ==========================================================
+# SAFE SHAP IMPORT
+# ==========================================================
+try:
+    import shap
+    SHAP_AVAILABLE = True
+except ImportError:
+    shap = None
+    SHAP_AVAILABLE = False
+
+from src.data_loader import DataLoader
+from src.retention_features import build_retention_features
+from src.retention_explainer import RetentionExplainer
+
+MODEL_PATH = "models/retention_model.pkl"
+
+
+# ==========================================================
+# LOAD DATA
+# ==========================================================
+@st.cache_data
+def load_retention_features():
+
+    loader = DataLoader("data/raw")
+    data = loader.load_all()
+
+    orders = data["orders"]
+    customers = data["customers"]
+    payments = data["payments"]
+    reviews = data["reviews"]
+
+    # Attach customer_unique_id
+    orders = orders.merge(
+        customers[["customer_id", "customer_unique_id"]],
+        on="customer_id",
+        how="left"
+    )
+
+    payments = payments.merge(
+        orders[["order_id", "customer_unique_id"]],
+        on="order_id",
+        how="left"
+    )
+
+    reviews = reviews.merge(
+        orders[["order_id", "customer_unique_id"]],
+        on="order_id",
+        how="left"
+    )
+
+    # Build features
+    features = build_retention_features(orders, payments, reviews)
+
+    # Clean customer table
+    customer_info = (
+        customers
+        .sort_values("customer_unique_id")
+        .drop_duplicates("customer_unique_id")
+        .reset_index(drop=True)
+    )
+
+    # Business-friendly ID
+    customer_info["customer_code"] = (
+        "CUST-" + (customer_info.index + 1).astype(str).str.zfill(5)
+    )
+
+    return features, customer_info
+
+
+# ==========================================================
+# MAIN DASHBOARD
+# ==========================================================
 def run_retention_dashboard():
 
-    import streamlit as st
-    import joblib
-    import pandas as pd
-    import os
-    import random
+    st.title("Customer Lifecycle Intelligence")
 
-    from src.data_loader import DataLoader
-    from src.retention_features import build_retention_features
-
-    # ==========================================================
-    # MODEL PATH (SAFE)
-    # ==========================================================
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    MODEL_PATH = os.path.join(BASE_DIR, "..", "models", "retention_model.pkl")
-
-    # ==========================================================
-    # HEADER
-    # ==========================================================
-    st.markdown("## 🔁 Customer Retention Intelligence")
-    st.caption("Predict churn and understand customer behavior")
-    st.markdown("---")
-
-    # ==========================================================
-    # LOAD DATA
-    # ==========================================================
-    @st.cache_data
-    def load_data():
-        loader = DataLoader("data/raw")
-        data = loader.load_all()
-
-        features = build_retention_features(
-            data["orders"],
-            data["payments"],
-            data["reviews"]
-        )
-
-        return features
-
-    df = load_data()
-
-    # ==========================================================
-    # SELECT CUSTOMER
-    # ==========================================================
-    selected_index = st.selectbox("Select Customer Index", df.index)
-    customer = df.iloc[[selected_index]]
-
-    # ==========================================================
-    # CHECK MODEL
-    # ==========================================================
-    if not os.path.exists(MODEL_PATH):
-
-        # 🚀 DEMO MODE (NO CRASH)
-        st.warning("⚠️ Retention model not found — running in demo mode")
-
-        prob = random.uniform(0.3, 0.9)
-
-        col1, col2 = st.columns(2)
-
-        col1.metric("Retention Probability", f"{prob*100:.2f}%")
-        col2.metric("Status", "Retained" if prob > 0.5 else "Churn Risk")
-
-        st.progress(prob)
-
-        st.markdown("### 📊 Insights")
-        if prob < 0.4:
-            st.warning("- Customer shows high churn tendency")
-        elif prob > 0.7:
-            st.success("- Customer is highly loyal")
-        else:
-            st.info("- Moderate retention probability")
-
-        st.info("ℹ️ This is simulated output because model is missing")
-
-        return  # ⛔ STOP HERE (no crash)
-
-    # ==========================================================
-    # LOAD MODEL (REAL MODE)
-    # ==========================================================
+    # ---------------------------------------------------------
+    # LOAD MODEL
+    # ---------------------------------------------------------
     model_bundle = joblib.load(MODEL_PATH)
 
     if isinstance(model_bundle, dict):
@@ -87,53 +98,171 @@ def run_retention_dashboard():
         model = model_bundle
         threshold = 0.5
 
-    # ==========================================================
+    explainer = RetentionExplainer(MODEL_PATH)
+
+    # ---------------------------------------------------------
+    # LOAD DATA
+    # ---------------------------------------------------------
+    features_df, customer_info = load_retention_features()
+
+    features_df = features_df.merge(
+        customer_info[
+            ["customer_unique_id", "customer_code", "customer_city", "customer_state"]
+        ],
+        on="customer_unique_id",
+        how="left"
+    )
+
+    features_df["customer_display"] = (
+        features_df["customer_code"] +
+        " | " +
+        features_df["customer_city"].str.title() +
+        " | " +
+        features_df["customer_state"]
+    )
+
+    # ---------------------------------------------------------
+    # PREPARE FEATURES
+    # ---------------------------------------------------------
+    X_all = features_df.drop(columns=[
+        "customer_unique_id",
+        "customer_code",
+        "customer_city",
+        "customer_state",
+        "customer_display"
+    ])
+
+    probabilities = model.predict_proba(X_all)[:, 1]
+    features_df["retention_probability"] = probabilities
+
+    # ---------------------------------------------------------
+    # TOP CUSTOMERS
+    # ---------------------------------------------------------
+    st.subheader("Top Likely To Retain Customers")
+
+    top_customers = (
+        features_df
+        .sort_values("retention_probability", ascending=False)
+        .drop_duplicates(subset=["customer_code"])
+        .head(5)
+    )
+
+    st.dataframe(
+        top_customers[
+            ["customer_display", "retention_probability"]
+        ].rename(columns={
+            "customer_display": "Customer",
+            "retention_probability": "Retention Probability"
+        }),
+        use_container_width=True
+    )
+
+    st.markdown("---")
+
+    # ---------------------------------------------------------
+    # CUSTOMER SELECTION
+    # ---------------------------------------------------------
+    customer_map = dict(
+        zip(features_df["customer_display"], features_df["customer_unique_id"])
+    )
+
+    selected_display = st.selectbox(
+        "Select Customer",
+        list(customer_map.keys())
+    )
+
+    selected_customer = customer_map[selected_display]
+
+    # ---------------------------------------------------------
+    # CUSTOMER DATA
+    # ---------------------------------------------------------
+    customer_data = features_df[
+        features_df["customer_unique_id"] == selected_customer
+    ].drop(columns=[
+        "customer_unique_id",
+        "customer_code",
+        "customer_city",
+        "customer_state",
+        "customer_display",
+        "retention_probability"
+    ])
+
+    # ---------------------------------------------------------
     # PREDICTION
-    # ==========================================================
-    prob = model.predict_proba(customer)[0][1]
+    # ---------------------------------------------------------
+    probability = model.predict_proba(customer_data)[0][1]
 
-    col1, col2 = st.columns(2)
+    st.metric("Retention Probability (%)", f"{probability * 100:.2f}")
 
-    col1.metric("Retention Probability", f"{prob*100:.2f}%")
-    col2.metric("Status", "Retained" if prob >= threshold else "Churn Risk")
-
-    # ==========================================================
-    # PROGRESS BAR
-    # ==========================================================
-    st.progress(prob)
+    if probability < threshold:
+        st.error("High Churn Risk")
+    else:
+        st.success("Likely to Retain")
 
     # ==========================================================
-    # INSIGHTS
+    # SHAP - LOCAL EXPLANATION (FIXED)
     # ==========================================================
-    st.markdown("### 📊 Insights")
+    st.subheader("Why this prediction?")
 
-    insights = []
+    if SHAP_AVAILABLE:
+        try:
+            shap_values, X_named = explainer.explain_instance(customer_data)
 
-    if prob < 0.4:
-        insights.append("Customer has high churn probability")
+            if shap_values is not None:
 
-    if prob > 0.7:
-        insights.append("Customer is highly loyal")
+                expected_value = explainer.explainer.expected_value[1]
+                shap_val = shap_values[1][0]
+                features = X_named.iloc[0]
 
-    if not insights:
-        insights.append("Moderate retention likelihood")
+                fig, ax = plt.subplots()
 
-    for i in insights:
-        st.warning(f"- {i}")
+                shap.plots._waterfall.waterfall_legacy(
+                    expected_value,
+                    shap_val,
+                    features,
+                    show=False
+                )
+
+                st.pyplot(fig)
+
+            else:
+                st.warning("SHAP values not available")
+
+        except Exception as e:
+            st.warning(f"SHAP error: {e}")
+
+    else:
+        st.info("SHAP not installed")
 
     # ==========================================================
-    # OPTIONAL EXPLAINABILITY (SAFE)
+    # SHAP - GLOBAL EXPLANATION (FIXED)
     # ==========================================================
-    st.markdown("### 🧠 Model Explainability")
+    st.subheader("Global Retention Drivers")
 
-    try:
-        from src.retention_explainer import RetentionExplainer
+    if SHAP_AVAILABLE:
+        try:
+            sample_data = X_all.sample(min(500, len(X_all)))
 
-        explainer = RetentionExplainer(MODEL_PATH)
-        shap_values, X = explainer.explain_instance(customer)
+            shap_values_global, X_global = explainer.explain_global(sample_data)
 
-        st.write("Top influencing features:")
-        st.dataframe(X.head())
+            if shap_values_global is not None:
 
-    except Exception as e:
-        st.info("Explainability not available")
+                fig = plt.figure()
+
+                shap.summary_plot(
+                    shap_values_global[1],  # ✅ FIXED
+                    X_global,
+                    feature_names=X_global.columns,
+                    show=False
+                )
+
+                st.pyplot(fig)
+
+            else:
+                st.warning("Global SHAP not available")
+
+        except Exception as e:
+            st.warning(f"Global SHAP error: {e}")
+
+    else:
+        st.info("Global SHAP not available")
