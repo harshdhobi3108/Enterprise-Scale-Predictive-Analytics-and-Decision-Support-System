@@ -1,8 +1,70 @@
-def run_retention_dashboard():
+"""
+Retention Dashboard - FINAL STABLE VERSION
+"""
 
-    import os
-    import joblib
-    import streamlit as st
+import streamlit as st
+import pandas as pd
+import joblib
+import os
+
+# ==========================================================
+# LOAD DATA FUNCTION (FIXED)
+# ==========================================================
+@st.cache_data
+def load_retention_features():
+
+    from src.data_loader import DataLoader
+    from src.retention_features import build_retention_features
+
+    loader = DataLoader("data/raw")
+    data = loader.load_all()
+
+    orders = data["orders"]
+    customers = data["customers"]
+    payments = data["payments"]
+    reviews = data["reviews"]
+
+    # Merge IDs
+    orders = orders.merge(
+        customers[["customer_id", "customer_unique_id"]],
+        on="customer_id",
+        how="left"
+    )
+
+    payments = payments.merge(
+        orders[["order_id", "customer_unique_id"]],
+        on="order_id",
+        how="left"
+    )
+
+    reviews = reviews.merge(
+        orders[["order_id", "customer_unique_id"]],
+        on="order_id",
+        how="left"
+    )
+
+    # Build features
+    features = build_retention_features(orders, payments, reviews)
+
+    # Customer info
+    customer_info = (
+        customers
+        .sort_values("customer_unique_id")
+        .drop_duplicates("customer_unique_id")
+        .reset_index(drop=True)
+    )
+
+    customer_info["customer_code"] = (
+        "CUST-" + (customer_info.index + 1).astype(str).str.zfill(5)
+    )
+
+    return features, customer_info
+
+
+# ==========================================================
+# MAIN DASHBOARD
+# ==========================================================
+def run_retention_dashboard():
 
     st.title("Customer Lifecycle Intelligence")
 
@@ -21,7 +83,7 @@ def run_retention_dashboard():
     try:
         model = joblib.load(MODEL_PATH)
     except Exception as e:
-        st.error(f"Model load failed: {e}")
+        st.error(f"❌ Model load failed: {e}")
         st.stop()
 
     # ==========================================================
@@ -30,7 +92,7 @@ def run_retention_dashboard():
     try:
         model_features = joblib.load(FEATURES_PATH)
     except Exception as e:
-        st.error(f"model_features.pkl missing: {e}")
+        st.error(f"❌ model_features.pkl missing: {e}")
         st.stop()
 
     # ==========================================================
@@ -44,8 +106,13 @@ def run_retention_dashboard():
     # ==========================================================
     # LOAD DATA
     # ==========================================================
-    features_df, customer_info = load_retention_features()
+    try:
+        features_df, customer_info = load_retention_features()
+    except Exception as e:
+        st.error(f"❌ Data loading failed: {e}")
+        st.stop()
 
+    # Merge customer info
     features_df = features_df.merge(
         customer_info[
             ["customer_unique_id", "customer_code", "customer_city", "customer_state"]
@@ -55,15 +122,15 @@ def run_retention_dashboard():
     )
 
     features_df["customer_display"] = (
-        features_df["customer_code"] +
-        " | " +
-        features_df["customer_city"].str.title() +
-        " | " +
-        features_df["customer_state"]
+        features_df["customer_code"]
+        + " | "
+        + features_df["customer_city"].astype(str).str.title()
+        + " | "
+        + features_df["customer_state"].astype(str)
     )
 
     # ==========================================================
-    # 🔥 PREPARE INPUT (STRICT FEATURE MATCH)
+    # PREPARE FEATURES (STRICT MATCH)
     # ==========================================================
     X_all = features_df.drop(columns=[
         "customer_unique_id",
@@ -78,7 +145,7 @@ def run_retention_dashboard():
         if col not in X_all.columns:
             X_all[col] = 0
 
-    # Keep exact order
+    # Ensure correct order
     X_all = X_all[model_features]
 
     # ==========================================================
@@ -87,7 +154,7 @@ def run_retention_dashboard():
     try:
         probabilities = model.predict_proba(X_all)[:, 1]
     except Exception as e:
-        st.error(f"Prediction error: {e}")
+        st.error(f"❌ Prediction error: {e}")
         st.stop()
 
     features_df["retention_probability"] = probabilities
@@ -131,7 +198,7 @@ def run_retention_dashboard():
     selected_customer = customer_map[selected_display]
 
     # ==========================================================
-    # CUSTOMER DATA
+    # SINGLE CUSTOMER DATA
     # ==========================================================
     customer_data = features_df[
         features_df["customer_unique_id"] == selected_customer
@@ -172,12 +239,14 @@ def run_retention_dashboard():
     st.subheader("Why this prediction?")
 
     try:
+        from src.retention_explainer import RetentionExplainer
+        import matplotlib.pyplot as plt
+        import shap
+
         explainer = RetentionExplainer(MODEL_PATH)
         shap_values, X_named = explainer.explain_instance(customer_data)
 
         if shap_values is not None:
-            import matplotlib.pyplot as plt
-            import shap
 
             fig, ax = plt.subplots()
 
@@ -189,6 +258,7 @@ def run_retention_dashboard():
             )
 
             st.pyplot(fig)
+
         else:
             st.info("SHAP not available")
 
