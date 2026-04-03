@@ -1,123 +1,46 @@
-"""
-Customer Lifecycle Intelligence Dashboard
-Retention Prediction + SHAP Explainability
-(FINAL FIXED VERSION - STREAMLIT SAFE)
-"""
-
-import streamlit as st
-import joblib
-import pandas as pd
-import matplotlib.pyplot as plt
-import numpy as np
-import os
-
-# ==========================================================
-# SAFE SHAP IMPORT
-# ==========================================================
-try:
-    import shap
-    SHAP_AVAILABLE = True
-except ImportError:
-    shap = None
-    SHAP_AVAILABLE = False
-
-from src.data_loader import DataLoader
-from src.retention_features import build_retention_features
-from src.retention_explainer import RetentionExplainer
-
-# ==========================================================
-# 🔥 FIXED MODEL PATH (IMPORTANT)
-# ==========================================================
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MODEL_PATH = os.path.join(BASE_DIR, "models", "delivery_model.pkl")
-
-
-# ==========================================================
-# LOAD DATA
-# ==========================================================
-@st.cache_data
-def load_retention_features():
-
-    loader = DataLoader("data/raw")
-    data = loader.load_all()
-
-    orders = data["orders"]
-    customers = data["customers"]
-    payments = data["payments"]
-    reviews = data["reviews"]
-
-    orders = orders.merge(
-        customers[["customer_id", "customer_unique_id"]],
-        on="customer_id",
-        how="left"
-    )
-
-    payments = payments.merge(
-        orders[["order_id", "customer_unique_id"]],
-        on="order_id",
-        how="left"
-    )
-
-    reviews = reviews.merge(
-        orders[["order_id", "customer_unique_id"]],
-        on="order_id",
-        how="left"
-    )
-
-    features = build_retention_features(orders, payments, reviews)
-
-    customer_info = (
-        customers
-        .sort_values("customer_unique_id")
-        .drop_duplicates("customer_unique_id")
-        .reset_index(drop=True)
-    )
-
-    customer_info["customer_code"] = (
-        "CUST-" + (customer_info.index + 1).astype(str).str.zfill(5)
-    )
-
-    return features, customer_info
-
-
-# ==========================================================
-# MAIN DASHBOARD
-# ==========================================================
 def run_retention_dashboard():
+
+    import os
+    import joblib
+    import streamlit as st
 
     st.title("Customer Lifecycle Intelligence")
 
-    # ---------------------------------------------------------
-    # 🔥 DEBUG INFO (REMOVE LATER)
-    # ---------------------------------------------------------
-    st.write("Current working directory:", os.getcwd())
-    st.write("Model path:", MODEL_PATH)
+    # ==========================================================
+    # PATH SETUP
+    # ==========================================================
+    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-    if not os.path.exists(MODEL_PATH):
-        st.error(f"❌ Model file NOT FOUND at: {MODEL_PATH}")
-        st.stop()
+    MODEL_PATH = os.path.join(BASE_DIR, "models", "delivery_model.pkl")
+    FEATURES_PATH = os.path.join(BASE_DIR, "models", "model_features.pkl")
+    THRESHOLD_PATH = os.path.join(BASE_DIR, "models", "threshold.pkl")
 
-    # ---------------------------------------------------------
+    # ==========================================================
     # LOAD MODEL
-    # ---------------------------------------------------------
+    # ==========================================================
     try:
-        model_bundle = joblib.load(MODEL_PATH)
+        model = joblib.load(MODEL_PATH)
     except Exception as e:
-        st.error(f"❌ Error loading model: {e}")
+        st.error(f"Model load failed: {e}")
         st.stop()
 
-    if isinstance(model_bundle, dict):
-        model = model_bundle["model"]
-        threshold = model_bundle.get("threshold", 0.5)
+    # ==========================================================
+    # LOAD FEATURES + THRESHOLD
+    # ==========================================================
+    try:
+        model_features = joblib.load(FEATURES_PATH)
+    except:
+        st.error("model_features.pkl missing")
+        st.stop()
+
+    if os.path.exists(THRESHOLD_PATH):
+        threshold = joblib.load(THRESHOLD_PATH)
     else:
-        model = model_bundle
         threshold = 0.5
 
-    explainer = RetentionExplainer(MODEL_PATH)
-
-    # ---------------------------------------------------------
+    # ==========================================================
     # LOAD DATA
-    # ---------------------------------------------------------
+    # ==========================================================
     features_df, customer_info = load_retention_features()
 
     features_df = features_df.merge(
@@ -136,23 +59,39 @@ def run_retention_dashboard():
         features_df["customer_state"]
     )
 
-    # ---------------------------------------------------------
-    # PREPARE FEATURES
-    # ---------------------------------------------------------
+    # ==========================================================
+    # 🔥 FEATURE ALIGNMENT (CRITICAL FIX)
+    # ==========================================================
     X_all = features_df.drop(columns=[
         "customer_unique_id",
         "customer_code",
         "customer_city",
         "customer_state",
         "customer_display"
-    ])
+    ], errors="ignore")
 
-    probabilities = model.predict_proba(X_all)[:, 1]
+    # Add missing columns
+    for col in model_features:
+        if col not in X_all.columns:
+            X_all[col] = 0
+
+    # Ensure correct order
+    X_all = X_all[model_features]
+
+    # ==========================================================
+    # PREDICTIONS
+    # ==========================================================
+    try:
+        probabilities = model.predict_proba(X_all)[:, 1]
+    except Exception as e:
+        st.error(f"Prediction error: {e}")
+        st.stop()
+
     features_df["retention_probability"] = probabilities
 
-    # ---------------------------------------------------------
+    # ==========================================================
     # TOP CUSTOMERS
-    # ---------------------------------------------------------
+    # ==========================================================
     st.subheader("Top Likely To Retain Customers")
 
     top_customers = (
@@ -174,9 +113,9 @@ def run_retention_dashboard():
 
     st.markdown("---")
 
-    # ---------------------------------------------------------
-    # CUSTOMER SELECTION
-    # ---------------------------------------------------------
+    # ==========================================================
+    # CUSTOMER SELECT
+    # ==========================================================
     customer_map = dict(
         zip(features_df["customer_display"], features_df["customer_unique_id"])
     )
@@ -188,9 +127,9 @@ def run_retention_dashboard():
 
     selected_customer = customer_map[selected_display]
 
-    # ---------------------------------------------------------
+    # ==========================================================
     # CUSTOMER DATA
-    # ---------------------------------------------------------
+    # ==========================================================
     customer_data = features_df[
         features_df["customer_unique_id"] == selected_customer
     ].drop(columns=[
@@ -200,51 +139,55 @@ def run_retention_dashboard():
         "customer_state",
         "customer_display",
         "retention_probability"
-    ])
+    ], errors="ignore")
 
-    # ---------------------------------------------------------
-    # PREDICTION
-    # ---------------------------------------------------------
+    # 🔥 ALIGN FEATURES AGAIN
+    for col in model_features:
+        if col not in customer_data.columns:
+            customer_data[col] = 0
+
+    customer_data = customer_data[model_features]
+
+    # ==========================================================
+    # SINGLE PREDICTION
+    # ==========================================================
     probability = model.predict_proba(customer_data)[0][1]
 
     st.metric("Retention Probability (%)", f"{probability * 100:.2f}")
 
+    # ==========================================================
+    # BUSINESS LOGIC
+    # ==========================================================
     if probability < threshold:
         st.error("High Churn Risk")
     else:
         st.success("Likely to Retain")
 
     # ==========================================================
-    # SHAP
+    # SHAP (OPTIONAL SAFE)
     # ==========================================================
     st.subheader("Why this prediction?")
 
-    if SHAP_AVAILABLE:
-        try:
-            shap_values, X_named = explainer.explain_instance(customer_data)
+    try:
+        explainer = RetentionExplainer(MODEL_PATH)
+        shap_values, X_named = explainer.explain_instance(customer_data)
 
-            if shap_values is not None:
+        if shap_values is not None:
+            import matplotlib.pyplot as plt
+            import shap
 
-                expected_value = explainer.explainer.expected_value[1]
-                shap_val = shap_values[1][0]
-                features = X_named.iloc[0]
+            fig, ax = plt.subplots()
 
-                fig, ax = plt.subplots()
+            shap.plots._waterfall.waterfall_legacy(
+                explainer.explainer.expected_value[1],
+                shap_values[1][0],
+                X_named.iloc[0],
+                show=False
+            )
 
-                shap.plots._waterfall.waterfall_legacy(
-                    expected_value,
-                    shap_val,
-                    features,
-                    show=False
-                )
+            st.pyplot(fig)
+        else:
+            st.info("SHAP not available")
 
-                st.pyplot(fig)
-
-            else:
-                st.warning("SHAP values not available")
-
-        except Exception as e:
-            st.warning(f"SHAP error: {e}")
-
-    else:
-        st.info("SHAP not installed")
+    except Exception as e:
+        st.warning(f"SHAP error: {e}")
