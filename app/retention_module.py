@@ -12,11 +12,10 @@ def run_retention_dashboard():
     BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
     MODEL_PATH = os.path.join(BASE_DIR, "models", "delivery_model.pkl")
-    FEATURES_PATH = os.path.join(BASE_DIR, "models", "model_features.pkl")
     THRESHOLD_PATH = os.path.join(BASE_DIR, "models", "threshold.pkl")
 
     # ==========================================================
-    # LOAD MODEL
+    # LOAD MODEL (PIPELINE)
     # ==========================================================
     try:
         model = joblib.load(MODEL_PATH)
@@ -25,14 +24,8 @@ def run_retention_dashboard():
         st.stop()
 
     # ==========================================================
-    # LOAD FEATURES + THRESHOLD
+    # LOAD THRESHOLD
     # ==========================================================
-    try:
-        model_features = joblib.load(FEATURES_PATH)
-    except:
-        st.error("model_features.pkl missing")
-        st.stop()
-
     if os.path.exists(THRESHOLD_PATH):
         threshold = joblib.load(THRESHOLD_PATH)
     else:
@@ -60,7 +53,7 @@ def run_retention_dashboard():
     )
 
     # ==========================================================
-    # 🔥 FEATURE ALIGNMENT (CRITICAL FIX)
+    # 🔥 PREPARE INPUT (NO FEATURE ALIGNMENT)
     # ==========================================================
     X_all = features_df.drop(columns=[
         "customer_unique_id",
@@ -70,16 +63,8 @@ def run_retention_dashboard():
         "customer_display"
     ], errors="ignore")
 
-    # Add missing columns
-    for col in model_features:
-        if col not in X_all.columns:
-            X_all[col] = 0
-
-    # Ensure correct order
-    X_all = X_all[model_features]
-
     # ==========================================================
-    # PREDICTIONS
+    # PREDICTIONS (PIPELINE HANDLES EVERYTHING)
     # ==========================================================
     try:
         probabilities = model.predict_proba(X_all)[:, 1]
@@ -128,7 +113,7 @@ def run_retention_dashboard():
     selected_customer = customer_map[selected_display]
 
     # ==========================================================
-    # CUSTOMER DATA
+    # CUSTOMER DATA (RAW → PIPELINE WILL HANDLE)
     # ==========================================================
     customer_data = features_df[
         features_df["customer_unique_id"] == selected_customer
@@ -140,13 +125,6 @@ def run_retention_dashboard():
         "customer_display",
         "retention_probability"
     ], errors="ignore")
-
-    # 🔥 ALIGN FEATURES AGAIN
-    for col in model_features:
-        if col not in customer_data.columns:
-            customer_data[col] = 0
-
-    customer_data = customer_data[model_features]
 
     # ==========================================================
     # SINGLE PREDICTION
@@ -164,7 +142,7 @@ def run_retention_dashboard():
         st.success("Likely to Retain")
 
     # ==========================================================
-    # SHAP (OPTIONAL SAFE)
+    # SHAP (SAFE)
     # ==========================================================
     st.subheader("Why this prediction?")
 
